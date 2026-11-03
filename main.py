@@ -30,7 +30,7 @@ ATTACK_FRAMES = 15  # 攻撃が出ている時間（フレーム）
 ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
 HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
 KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
-ADJUSTING_CPU_ATTACK_POINT = -10
+ADJUSTING_CPU_ATTACK_POINT = -10  # cpuが攻撃するときの攻撃計算の補助判定
 
 
 @dataclass
@@ -261,7 +261,7 @@ def create_fighters() -> tuple[Fighter, Fighter]:
     2人のキャラを初期状態で生成する
     """
     p1 = Fighter("P1", 250, 1, P1_KEYS, "fig/p1.png", (60, 120, 255))
-    cpu = CPUFighter("CPU", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80),"normal")
+    cpu = CPUFighter("CPU", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80), "normal")
     return p1, cpu
 
 
@@ -274,6 +274,28 @@ class MoveTuple(NamedTuple):
     jump: bool = False  # ジャンプ
     attack: int | None = None  # 攻撃
     defence: bool = False  # 防御
+
+
+class DifficultyTuple(NamedTuple):
+    """
+    CPU難易度に関するNamedTuple
+    """
+    think_interval: int  # 思考速度のインターバル
+    attack_rate: float  # 攻撃レート
+    avoid_rate: float  # 回避レート
+
+
+DIFFICULTY = {
+    "weak": DifficultyTuple(think_interval=45,
+                            attack_rate=0.3,
+                            avoid_rate=0.15),
+    "normal": DifficultyTuple(think_interval=30,
+                              attack_rate=0.5,
+                              avoid_rate=0.3),
+    "strong": DifficultyTuple(think_interval=15,
+                              attack_rate=0.75,
+                              avoid_rate=0.75),
+}
 
 
 class CPUFighter(Fighter):
@@ -297,6 +319,7 @@ class CPUFighter(Fighter):
         """
         super().__init__(name, x, facing, keys, img_path, color)
         self.cpu_difficulty = cpu_difficulty  # cpuの強さの変数
+        self.difficulty_param = DIFFICULTY[cpu_difficulty]  # 難易度パラメーター
         self.think_timer = 0  # 次の思考までの残りフレーム数
         self.action = MoveTuple()  # 行動選択
 
@@ -307,7 +330,8 @@ class CPUFighter(Fighter):
         戻り値 : MoveTuple
         """
         distant_player = abs(enemy.rect.centerx - self.rect.centerx)  # 相手との距離計算
-        attack_range = FIGHTER_W//2 + ATTACK_W + FIGHTER_W//2 + ADJUSTING_CPU_ATTACK_POINT  # 攻撃可能かどうかの判定を行うための計算
+        attack_range = (FIGHTER_W//2 + ATTACK_W + FIGHTER_W//2
+                        + ADJUSTING_CPU_ATTACK_POINT)  # 攻撃可能かどうかの判定を行うための計算
         if attack_range >= distant_player:
             return MoveTuple(attack=0)
         elif self.facing == +1:
@@ -323,7 +347,11 @@ class CPUFighter(Fighter):
         """
         if self.hitstun > 0:
             return
-        self.action = self.think_action(enemy)
+        if self.think_timer <= 0:
+            self.action = self.think_action(enemy)
+            self.think_timer = self.difficulty_param.think_interval
+        else:
+            self.think_timer -= 1
         if self.action.left:
             self.rect.x -= WALK_SPEED
         elif self.action.right:
