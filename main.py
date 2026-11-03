@@ -1,9 +1,9 @@
 import os
+import random
 import sys
 from dataclasses import dataclass
 
 import pygame as pg
-
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,8 +16,8 @@ GROUND_Y = 520  # 地面のy座標（キャラの足元）
 GRAVITY = 1  # 1フレームごとに加算される落下速度
 ROUND_TIME = 60  # 1ラウンドの制限時間（秒）
 
-FIGHTER_W = 80  # キャラの幅（当たり判定）
-FIGHTER_H = 160  # キャラの高さ（当たり判定）
+FIGHTER_W = 120  # キャラの表示幅
+FIGHTER_H = 120  # キャラの表示高さ
 MAX_HP = 100  # 最大体力
 WALK_SPEED = 5  # 歩く速さ
 JUMP_POWER = 20  # ジャンプの初速
@@ -30,6 +30,18 @@ ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
 HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
 KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
 
+# アニメーション速度（フレーム毎）
+ANIM_SPEED_WALK = 10
+ANIM_SPEED_ATTACK = 10
+
+CELL_W = 120 # セルの横幅
+CELL_H = 120 # セルの縦幅
+CELL_MARGIN = 2  # セル間の枠線の幅
+
+STAND_CELL = (0, 0) #棒立ち
+WALK_CELLS = [(1, i) for i in range(8)]   # 歩き
+ATTACK_CELL = (3, 3) # 攻撃
+HITSTUN_CELL = (4, 2) #のけぞり
 
 @dataclass
 class KeyConfig:
@@ -41,93 +53,174 @@ class KeyConfig:
     jump: int
     attack: int
 
-
 P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d, jump=pg.K_w, attack=pg.K_f)
 P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT, jump=pg.K_UP, attack=pg.K_l)
 
 
-def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
-    """
-    キャラ画像を読み込む。画像がなければ単色の四角で代用する
-    引数 path：画像ファイルのパス
-    引数 color：画像がないときの代わりの色
-    戻り値：右向きのキャラ画像Surface
-    """
-    if os.path.exists(path):
-        img = pg.image.load(path).convert_alpha()
-        return pg.transform.scale(img, (FIGHTER_W, FIGHTER_H))
-    img = pg.Surface((FIGHTER_W, FIGHTER_H))
-    img.fill(color)
-    pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))  # 向きが分かるように目を描く
-    return img
-
-
 class Fighter(pg.sprite.Sprite):
     """
-    格闘キャラクターに関するクラス
+    格闘キャラクターの初期化を行う
+    引数 name：キャラクター名
+    引数 x：初期x座標
+    引数 facing：向き（右:1, 左:-1）
+    引数 keys：操作キー設定
+    引数 img_path：画像ファイルのパス
+    引数 color：画像がない場合の代替カラー
     """
 
     def __init__(self, name: str, x: int, facing: int, keys: KeyConfig,
                  img_path: str, color: tuple[int, int, int]) -> None:
         """
-        キャラクターを生成する
-        引数 name：表示名
-        引数 x：初期位置のx座標（中心）
-        引数 facing：向き（右:+1, 左:-1）
-        引数 keys：操作キーの設定
-        引数 img_path：右向き画像のパス
-        引数 color：画像がないときの代わりの色
+        スプライトシートから画像を読み込み、切り抜く
+        引数 path：画像ファイルのパス
+        引数 color：フォールバック用の色
         """
         super().__init__()
         self.name = name
         self.keys = keys
         self.facing = facing
-        self.img_right = load_fighter_image(img_path, color)
-        self.img_left = pg.transform.flip(self.img_right, True, False)
-        self.image = self.img_right if facing == 1 else self.img_left
+        
+        self.load_animations(img_path, color)
+        
+        self.anim_timer = 0
+        self.anim_index = 0
+        
+        self.image = self.stand_img_right if facing == 1 else self.stand_img_left
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.bottom = GROUND_Y
-        self.vy = 0  # 縦方向の速度
+        self.vy = 0  
         self.hp = MAX_HP
-        self.attack_timer = 0  # 攻撃判定が残っているフレーム数
-        self.cooldown = 0  # 次の攻撃までの待ちフレーム数
-        self.hitstun = 0  # のけぞりの残りフレーム数
-        self.has_hit = False  # 今回の攻撃がすでに当たったか
+        self.attack_timer = 0  
+        self.cooldown = 0  
+        self.hitstun = 0  
+        self.has_hit = False  
+
+    def load_animations(self, path: str, color: tuple[int, int, int]) -> None:
+        """
+        スプライトシートから画像を読み込み、切り抜く
+        引数 path：画像のパス
+        引数 color：透過用の色
+        """
+        if os.path.exists(path):
+            sheet = pg.image.load(path).convert()
+            sheet.set_colorkey((0, 0, 0), pg.RLEACCEL)
+            width, height = sheet.get_size()
+            for x in range(width):
+                for y in range(height):
+                    r, g, b, *_ = sheet.get_at((x, y))
+                    if r < 30 and g < 30 and b < 30:
+                        sheet.set_at((x, y), (0, 0, 0))
+        else:
+            sheet = pg.Surface((CELL_W * 12, CELL_H * 5))
+            sheet.fill(color)
+
+        def get_cell(row: int, col: int) -> pg.Surface:
+            """
+            指定されたセルをシートから切り出し、画面表示用のサイズ
+            引数 row：シートの行番号
+            引数 col：シートの列番号
+            戻り値：切り抜いたキャラクター画像のSurface
+            """
+            sub = pg.Surface((CELL_W, CELL_H), pg.SRCALPHA)
+            # 枠線を考慮して切り抜く
+            src_x = col * (CELL_W + CELL_MARGIN) + CELL_MARGIN
+            src_y = row * (CELL_H + CELL_MARGIN) + CELL_MARGIN
+            sub.blit(sheet, (0, 0), (src_x, src_y, CELL_W, CELL_H))
+            return pg.transform.scale(sub, (FIGHTER_W, FIGHTER_H))
+
+        self.stand_img_right = get_cell(STAND_CELL[0], STAND_CELL[1])
+        self.stand_img_left = pg.transform.flip(self.stand_img_right, True, False)
+
+        self.walk_imgs_right = [get_cell(r, c) for r, c in WALK_CELLS]
+        self.walk_imgs_left = [pg.transform.flip(img, True, False) for img in self.walk_imgs_right]
+
+        self.attack_img_right = get_cell(ATTACK_CELL[0], ATTACK_CELL[1])
+        self.attack_img_left = pg.transform.flip(self.attack_img_right, True, False)
+
+        self.hit_img_right = get_cell(HITSTUN_CELL[0], HITSTUN_CELL[1])
+        self.hit_img_left = pg.transform.flip(self.hit_img_right, True, False)
 
     def is_on_ground(self) -> bool:
         """
-        地面に立っているかを返す
+        キャラクターが地面上にいるかを判定する
+        戻り値：いる場合はTrue、空中の場合はFalse
         """
         return self.rect.bottom >= GROUND_Y
 
     def handle_input(self, key_lst: pg.key.ScancodeWrapper) -> None:
         """
-        押されているキーに応じて移動・ジャンプ・攻撃を行う
-        引数 key_lst：押下キーの真理値リスト
+        キー入力をごとの動作を処理する
+        引数 key_lst：押下されているキーの状態リスト
         """
-        if self.hitstun > 0:  # のけぞり中は操作できない
+        if self.hitstun > 0:
             return
+            
         dx = 0
+        is_moving = False
         if key_lst[self.keys.left]:
             dx -= WALK_SPEED
+            is_moving = True
         if key_lst[self.keys.right]:
             dx += WALK_SPEED
+            is_moving = True
+            
         self.rect.x += dx
+        
         if key_lst[self.keys.jump] and self.is_on_ground():
             self.vy = -JUMP_POWER
+            
         if key_lst[self.keys.attack] and self.cooldown == 0:
             self.attack_timer = ATTACK_FRAMES
             self.cooldown = ATTACK_COOLDOWN
             self.has_hit = False
+
+        old_bottom = self.rect.bottom
+
+        # 状態ごとに画像を設定する分岐
+        if self.hitstun > 0:
+            if self.facing == 1:
+               self.image = self.hit_img_right 
+            else:
+                self.image = self.hit_img_left 
+            
+        elif not self.is_on_ground():
+            if self.facing == 1:
+                self.image = self.stand_img_right
+            else:
+                self.image = self.stand_img_left
+            
+        elif self.attack_timer > 0:
+            if self.facing == 1:
+                self.image = self.attack_img_right 
+            else:
+                self.image = self.attack_img_left
+
+        elif is_moving:
+            self.anim_timer += 1
+            if self.anim_timer >= ANIM_SPEED_WALK:
+                self.anim_timer = 0
+                self.anim_index = (self.anim_index + 1) % len(self.walk_imgs_right)
+            imgs = self.walk_imgs_right if self.facing == 1 else self.walk_imgs_left
+            self.image = imgs[self.anim_index]
+            
+        else:
+            self.image = self.stand_img_right if self.facing == 1 else self.stand_img_left
+            self.anim_index = 0
+
+        centerx = self.rect.centerx
+        self.rect = self.image.get_rect()
+        self.rect.centerx = centerx
+        self.rect.bottom = old_bottom
 
     def face_to(self, other: "Fighter") -> None:
         """
         相手のいる方向を向く
         引数 other：相手キャラ
         """
+        if self.attack_timer > 0:
+            return
         self.facing = 1 if other.rect.centerx >= self.rect.centerx else -1
-        self.image = self.img_right if self.facing == 1 else self.img_left
 
     def get_attack_rect(self) -> pg.Rect | None:
         """
@@ -151,9 +244,10 @@ class Fighter(pg.sprite.Sprite):
         """
         self.hp = max(0, self.hp - damage)
         self.hitstun = HITSTUN_FRAMES
-        self.attack_timer = 0  # 攻撃を潰される
+        self.attack_timer = 0
         self.rect.x += KNOCKBACK * from_dir
-        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))  # 画面外に押し出されないようにする
+        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
+        self.image = self.hit_img_right if self.facing == 1 else self.hit_img_left
 
     def update(self) -> None:
         """
@@ -177,7 +271,7 @@ class Fighter(pg.sprite.Sprite):
         screen.blit(self.image, self.rect)
         atk = self.get_attack_rect()
         if atk is not None:
-            pg.draw.rect(screen, (255, 220, 0), atk, 3)  # 攻撃判定を可視化
+            pg.draw.rect(screen, (255, 220, 0), atk, 3)
 
 
 def check_hit(attacker: Fighter, defender: Fighter) -> None:
@@ -191,7 +285,7 @@ def check_hit(attacker: Fighter, defender: Fighter) -> None:
         return
     if atk.colliderect(defender.rect):
         defender.take_damage(ATTACK_DAMAGE, attacker.facing)
-        attacker.has_hit = True  # 1回の攻撃で多段ヒットしないようにする
+        attacker.has_hit = True
 
 
 def push_apart(f1: Fighter, f2: Fighter) -> None:
@@ -258,9 +352,23 @@ def create_fighters() -> tuple[Fighter, Fighter]:
     """
     2人のキャラを初期状態で生成する
     """
-    p1 = Fighter("P1", 250, 1, P1_KEYS, "fig/p1.png", (60, 120, 255))
-    p2 = Fighter("P2", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80))
+    p1 = Fighter("P1", 250, 1, P1_KEYS, "fig/player.png", (60, 120, 255))
+    p2 = Fighter("P2", 750, -1, P2_KEYS, "fig/player.png", (255, 80, 80))
     return p1, p2
+
+
+def load_random_bg() -> pg.Surface | None:
+    """
+    背景画像からランダムに1つ選んで読み込む
+    戻り値：背景のSurface、存在しない場合はNone
+    """
+    bg_filenames = ["bg.png", "bg1.png", "bg2.png"]
+    available_bgs = [f"fig/{name}" for name in bg_filenames if os.path.exists(f"fig/{name}")]
+    
+    if available_bgs:
+        chosen_bg = random.choice(available_bgs)
+        return pg.image.load(chosen_bg).convert()
+    return None
 
 
 def main() -> None:
@@ -269,11 +377,12 @@ def main() -> None:
     clock = pg.time.Clock()
     font_s = pg.font.Font(None, 36)
     font_l = pg.font.Font(None, 100)
-    bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
+    
+    bg_img = load_random_bg()
 
     p1, p2 = create_fighters()
-    tmr = 0  # 経過フレーム数
-    result = ""  # 決着時の文字列（空なら対戦中）
+    tmr = 0  
+    result = ""  
 
     while True:
         for event in pg.event.get():
@@ -282,7 +391,8 @@ def main() -> None:
             if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
                 return
             if event.type == pg.KEYDOWN and event.key == pg.K_r and result:
-                p1, p2 = create_fighters()  # リスタート
+                p1, p2 = create_fighters()  
+                bg_img = load_random_bg()  
                 tmr = 0
                 result = ""
 
@@ -308,15 +418,18 @@ def main() -> None:
         else:
             screen.fill((30, 30, 50))
             pg.draw.rect(screen, (90, 70, 50), (0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y))
+            
         p1.draw(screen)
         p2.draw(screen)
         draw_hp_bar(screen, p1, 40, font_s)
         draw_hp_bar(screen, p2, WIDTH - 440, font_s)
         remain = max(0, ROUND_TIME - tmr // FPS)
         draw_center_text(screen, str(remain), font_s, 32)
+        
         if result:
             draw_center_text(screen, result, font_l, HEIGHT // 2 - 40)
             draw_center_text(screen, "R: Restart  /  Esc: Quit", font_s, HEIGHT // 2 + 30)
+            
         pg.display.update()
         clock.tick(FPS)
 
