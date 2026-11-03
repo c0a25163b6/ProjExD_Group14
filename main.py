@@ -1,6 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import pygame as pg
 
@@ -29,6 +30,7 @@ ATTACK_FRAMES = 15  # 攻撃が出ている時間（フレーム）
 ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
 HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
 KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
+ADJUSTING_CPU_ATTACK_POINT = -10
 
 
 @dataclass
@@ -259,8 +261,79 @@ def create_fighters() -> tuple[Fighter, Fighter]:
     2人のキャラを初期状態で生成する
     """
     p1 = Fighter("P1", 250, 1, P1_KEYS, "fig/p1.png", (60, 120, 255))
-    p2 = Fighter("P2", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80))
-    return p1, p2
+    cpu = CPUFighter("CPU", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80),"normal")
+    return p1, cpu
+
+
+class MoveTuple(NamedTuple):
+    """
+    移動や攻撃などの一括管理用NamedTuple
+    """
+    left: bool = False  # 左移動
+    right: bool = False  # 右移動
+    jump: bool = False  # ジャンプ
+    attack: int | None = None  # 攻撃
+    defence: bool = False  # 防御
+
+
+class CPUFighter(Fighter):
+    """
+    CPUキャラクター生成とそれの操作頭脳のクラス
+    """
+    def __init__(self, name: str, x: int, facing: int,
+                 keys: KeyConfig, img_path: str,
+                 color: tuple[int, int, int],
+                 cpu_difficulty: str) -> None:
+        """
+        CPUキャラクターを生成する
+        引数 cpu_difficulty : cpuの強さ(weak, normal, strong)
+        引数 name：表示名
+        引数 x：初期位置のx座標（中心）
+        引数 facing：向き（右:+1, 左:-1）
+        引数 keys：操作キーの設定
+        引数 img_path：右向き画像のパス
+        引数 color：画像がないときの代わりの色
+        継承 : Fighterクラス
+        """
+        super().__init__(name, x, facing, keys, img_path, color)
+        self.cpu_difficulty = cpu_difficulty  # cpuの強さの変数
+        self.think_timer = 0  # 次の思考までの残りフレーム数
+        self.action = MoveTuple()  # 行動選択
+
+    def think_action(self, enemy: Fighter) -> MoveTuple:
+        """
+        距離や攻撃範囲を確認して攻撃、移動を判断する
+        引数 enemy : 相手キャラ
+        戻り値 : MoveTuple
+        """
+        distant_player = abs(enemy.rect.centerx - self.rect.centerx)  # 相手との距離計算
+        attack_range = FIGHTER_W//2 + ATTACK_W + FIGHTER_W//2 + ADJUSTING_CPU_ATTACK_POINT  # 攻撃可能かどうかの判定を行うための計算
+        if attack_range >= distant_player:
+            return MoveTuple(attack=0)
+        elif self.facing == +1:
+            return MoveTuple(right=True)
+        else:
+            return MoveTuple(left=True)
+
+    def action_cpu(self, enemy: Fighter) -> None:
+        """
+        cpuの行動を実行するメソッド
+        引数 enemy: 相手キャラ
+        戻り値: None
+        """
+        if self.hitstun > 0:
+            return
+        self.action = self.think_action(enemy)
+        if self.action.left:
+            self.rect.x -= WALK_SPEED
+        elif self.action.right:
+            self.rect.x += WALK_SPEED
+        if self.action.jump and self.is_on_ground():
+            self.vy = -JUMP_POWER
+        if self.action.attack is not None and self.cooldown == 0:
+            self.attack_timer = ATTACK_FRAMES
+            self.cooldown = ATTACK_COOLDOWN
+            self.has_hit = False
 
 
 def main() -> None:
@@ -289,7 +362,7 @@ def main() -> None:
         if not result:  # 対戦中の処理
             key_lst = pg.key.get_pressed()
             p1.handle_input(key_lst)
-            p2.handle_input(key_lst)
+            p2.action_cpu(p1)
             p1.update()
             p2.update()
             push_apart(p1, p2)
