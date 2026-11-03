@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 from dataclasses import dataclass
 from typing import NamedTuple
@@ -332,8 +333,12 @@ class CPUFighter(Fighter):
         distant_player = abs(enemy.rect.centerx - self.rect.centerx)  # 相手との距離計算
         attack_range = (FIGHTER_W//2 + ATTACK_W + FIGHTER_W//2
                         + ADJUSTING_CPU_ATTACK_POINT)  # 攻撃可能かどうかの判定を行うための計算
+        attack_random_rate = random.random()
         if attack_range >= distant_player:
-            return MoveTuple(attack=0)
+            if attack_random_rate <= self.difficulty_param.attack_rate:
+                return MoveTuple(attack=0)
+            else:
+                return MoveTuple()
         elif self.facing == +1:
             return MoveTuple(right=True)
         else:
