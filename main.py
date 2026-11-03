@@ -28,7 +28,7 @@ ATTACK_DAMAGE = 8  # 攻撃1回のダメージ
 ATTACK_FRAMES = 15  # 攻撃が出ている時間（フレーム）
 ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
 HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
-KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
+KNOCKBACK = 12  # 攻撃を受けたときに押し返される
 
 
 @dataclass
