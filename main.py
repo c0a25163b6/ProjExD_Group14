@@ -30,6 +30,28 @@ ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
 HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
 KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
 
+BGM_DIR = "BGM"  # BGMを置くフォルダ
+SE_DIR = "SE"  # 効果音を置くフォルダ
+BGM_VOLUME = 0.3  # BGMの音量（0.0〜1.0）
+SE_VOLUME = 0.7  # 効果音の音量（0.0〜1.0）
+ATTACK_SE = {
+    "punch": "punch",#パンチ
+    "kick": "kick",#キック
+    "upper": "upper",#アッパー    
+    "air": "air",#空中攻撃
+    "super": "super",# 必殺技
+}
+GUARD_SE = "guard"  # ガードされたときに鳴らす効果音の名前
+
+P1_SE_KEYS = {
+    pg.K_c: "punch",  # パンチ
+    pg.K_v: "kick",  # キック
+    pg.K_f: "upper",  # アッパーカット
+    pg.K_w: "air",  # ジャンプ攻撃
+    pg.K_r: "guard",  # ガード
+    pg.K_t: "guard",  # ガード
+    pg.K_z: "super",  # 必殺技
+}
 
 @dataclass
 class KeyConfig:
@@ -45,6 +67,27 @@ class KeyConfig:
 P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d, jump=pg.K_w, attack=pg.K_f)
 P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT, jump=pg.K_UP, attack=pg.K_l)
 
+class BGMManager:
+    """
+    ゲーム内のBGM再生・停止・音量変更を管理するクラス（追加機能）
+    """
+    def __init__(self, bgm_path: str, volume: float = 0.5) -> None:
+        pg.mixer.init()  # ミキサーの初期化
+        self.bgm_path = bgm_path
+        self.volume = volume
+        self.is_playing = False
+
+    def play(self, loops: int = -1) -> None:
+        if os.path.exists(self.bgm_path):
+            pg.mixer.music.load(self.bgm_path)  # 音源ファイルの読み込み[cite: 5]
+            pg.mixer.music.set_volume(self.volume)
+            pg.mixer.music.play(loops=loops)  # BGM再生[cite: 5]
+            self.is_playing = True
+
+    def stop(self) -> None:
+        if self.is_playing:
+            pg.mixer.music.stop()  # BGM停止[cite: 5]
+            self.is_playing = False
 
 def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     """
@@ -61,7 +104,39 @@ def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))  # 向きが分かるように目を描く
     return img
 
+class SEManager:
+    """
+    効果音（SE）の読み込みと再生を管理するクラス（追加機能）
+    """
 
+    def __init__(self, se_files: dict[str, str], volume: float = SE_VOLUME) -> None:
+        """
+        効果音をまとめて読み込む
+        引数 se_files：{効果音の名前: ファイル名}の辞書
+        引数 volume：音量（0.0〜1.0）
+        """
+        pg.mixer.init()
+        self.sounds: dict[str, pg.mixer.Sound] = {}
+        for name, file_name in se_files.items():
+            path = os.path.join(SE_DIR, file_name)
+            if os.path.exists(path):  # ファイルがなくてもゲームが落ちないようにする
+                snd = pg.mixer.Sound(path)
+                snd.set_volume(volume)
+                self.sounds[name] = snd
+
+    def play(self, name: str) -> None:
+        """
+        名前を指定して効果音を1回鳴らす
+        引数 name：効果音の名前
+        """
+        snd = self.sounds.get(name)
+        if snd is not None:
+            snd.play()
+    def stop_all(self) -> None:
+        """
+        鳴っている効果音をすべて止める（BGMは止まらない）
+        """
+        pg.mixer.stop()
 class Fighter(pg.sprite.Sprite):
     """
     格闘キャラクターに関するクラス
@@ -271,10 +346,26 @@ def main() -> None:
     font_l = pg.font.Font(None, 100)
     bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
 
+
+    # BGMマネージャーの生成と再生
+    # ※ファイルがBGMフォルダ内にある場合は "BGM/BGM1.wav" などのパスに変更してください
+    bgm = BGMManager(os.path.join(BGM_DIR, "BGM1.wav"), volume=BGM_VOLUME)
+    bgm.play()
+
+    se = SEManager({
+        "punch": "punch_1.mp3",
+        "kick": "kick_1.mp3",
+        "upper": "upper.mp3",
+        "air": "air.mp3",
+        "super": "super.mp3",
+        "guard": "guard.mp3",
+    })
+    
     p1, p2 = create_fighters()
     tmr = 0  # 経過フレーム数
     result = ""  # 決着時の文字列（空なら対戦中）
 
+    
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -285,7 +376,27 @@ def main() -> None:
                 p1, p2 = create_fighters()  # リスタート
                 tmr = 0
                 result = ""
-
+                bgm.play()  # BGMを再開する
+                continue  # Rはガードキーでもあるので、この回はSEを鳴らさない
+            # ===== ここから仮のSE（あとで消す）=====
+            # 戦いが終わったら（resultが入ったら）SEは鳴らさない
+            if event.type == pg.KEYDOWN and not result:
+                if event.key in P1_SE_KEYS:
+                    se.play(ATTACK_SE[P1_SE_KEYS[event.key]])
+                # 試聴用（1:パンチ 2:キック 3:アッパー 4:空中 5:必殺技 6:ガード）
+                if event.key == pg.K_1:
+                    se.play("punch")
+                if event.key == pg.K_2:
+                    se.play("kick")
+                if event.key == pg.K_3:
+                    se.play("upper")
+                if event.key == pg.K_4:
+                    se.play("air")
+                if event.key == pg.K_5:
+                    se.play("super")
+                if event.key == pg.K_6:
+                    se.play(GUARD_SE)
+            # ===== ここまで仮のSE =====
         if not result:  # 対戦中の処理
             key_lst = pg.key.get_pressed()
             p1.handle_input(key_lst)
@@ -301,7 +412,8 @@ def main() -> None:
             remain = ROUND_TIME - tmr // FPS
             if p1.hp <= 0 or p2.hp <= 0 or remain <= 0:
                 result = judge_winner(p1, p2)
-
+                bgm.stop()  # 決着したらBGMを止める
+                se.stop_all()  # 鳴っている効果音も止める
         # 描画
         if bg_img is not None:
             screen.blit(bg_img, (0, 0))
