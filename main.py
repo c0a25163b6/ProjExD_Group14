@@ -325,6 +325,7 @@ class CPUFighter(Fighter):
         self.difficulty_param = DIFFICULTY[cpu_difficulty]  # 難易度パラメーター
         self.think_timer = 0  # 次の思考までの残りフレーム数
         self.action = MoveTuple()  # 行動選択
+        self.was_hit = False  # 直前に攻撃を受けたかどうかの判定
 
     def think_action(self, enemy: Fighter) -> MoveTuple:
         """
@@ -377,7 +378,11 @@ class CPUFighter(Fighter):
         戻り値: None
         """
         if self.hitstun > 0:
+            self.was_hit = True
             return
+        if self.was_hit:
+            self.think_timer = 0
+            self.was_hit = False
         if self.think_timer <= 0:
             self.action = self.think_action(enemy)
             self.think_timer = self.difficulty_param.think_interval
