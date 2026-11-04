@@ -34,6 +34,30 @@ KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
 ADJUSTING_CPU_ATTACK_POINT = -10  # cpuが攻撃するときの攻撃計算の補助判定
 AVOID_CHOICE_STANDARD_RATE = 0.33  # cpuが回避するときの逃げの選択基準の境目
 AVOID_BACK_WALL_CHECK = 30  # CPU回避時の壁際判定の定数
+GAME_TITLE = "FIGHTERS"
+BACK_SELECT = "BACK"
+MENU_TOP_Y = HEIGHT // 2
+MENU_LINE_GAP = 60
+TITLE = {
+    "2p": "1 : 2P BATTLE",
+    "cpu": "2 : CPU BATTLE",
+    "controls": "3 : CONTROLS",
+}
+TITLE_KEY = {
+    pg.K_1: "2p",
+    pg.K_2: "cpu",
+    pg.K_3: "controls"
+}
+CPU_MODE_SELECT = {
+    "weak": "CPU : WEAK",
+    "normal": "CPU : NORMAL",
+    "strong": "CPU : STRONG"
+}
+CPU_SELECT_KEY = {
+    pg.K_1: "weak",
+    pg.K_2: "normal",
+    pg.K_3: "strong",
+}
 
 
 @dataclass
@@ -398,6 +422,42 @@ class CPUFighter(Fighter):
             self.attack_timer = ATTACK_FRAMES
             self.cooldown = ATTACK_COOLDOWN
             self.has_hit = False
+
+
+def title_select(screen: pg.Surface,
+                 font_s: pg.font.Font,
+                 font_l: pg.font.Font,
+                 clock: pg.time.Clock) -> str:
+    """
+    プレイヤー開始時のタイトル表示とモード選択用
+    引数 screen : 表示用
+    引数 font_s/l : タイトル、モード選択フォント用
+    引数 clock : タイマー用
+    戻り値 : str(2p/cpu/controls)
+    """
+    bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
+    while True:
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                pg.quit()
+                sys.exit()
+            if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
+                pg.quit()
+                sys.exit()
+            if event.type == pg.KEYDOWN:
+                if event.key in TITLE_KEY:
+                    return TITLE_KEY[event.key]
+        if bg_img is not None:
+            screen.blit(bg_img, (0, 0))
+        else:
+            screen.fill((30, 30, 50))
+            pg.draw.rect(screen, (90, 70, 50), (0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y))
+        draw_center_text(screen=screen, text=GAME_TITLE, font=font_l, y=HEIGHT // 4)
+        for i, text in enumerate(TITLE.values()):
+            draw_center_text(screen=screen, text=text, font=font_s,
+                             y=MENU_TOP_Y + i * MENU_LINE_GAP)
+        pg.display.update()
+        clock.tick(FPS)
 
 
 def main() -> None:
