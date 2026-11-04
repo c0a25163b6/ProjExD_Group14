@@ -284,13 +284,18 @@ def judge_winner(p1: Fighter, p2: Fighter) -> str:
     return "DRAW"
 
 
-def create_fighters() -> tuple[Fighter, Fighter]:
+def create_fighters(mode: str | None) -> tuple[Fighter, Fighter]:
     """
     2人のキャラを初期状態で生成する
+    引数 mode: Noneなら2Pプレイ,
+               str(weak,normal,strong)ならCPU対戦
     """
     p1 = Fighter("P1", 250, 1, P1_KEYS, "fig/p1.png", (60, 120, 255))
-    cpu = CPUFighter("CPU", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80), "normal")
-    return p1, cpu
+    if mode is None:
+        p2 = Fighter("P2", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80))
+    else:
+        p2 = CPUFighter("CPU", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80), mode)
+    return p1, p2
 
 
 class MoveTuple(NamedTuple):
@@ -530,8 +535,8 @@ def main() -> None:
     font_s = pg.font.Font(None, 36)
     font_l = pg.font.Font(None, 100)
     bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
-
-    p1, p2 = create_fighters()
+    menu = menu_flow(screen, font_s, font_l, clock)
+    p1, p2 = create_fighters(menu)
     tmr = 0  # 経過フレーム数
     result = ""  # 決着時の文字列（空なら対戦中）
 
@@ -542,14 +547,17 @@ def main() -> None:
             if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
                 return
             if event.type == pg.KEYDOWN and event.key == pg.K_r and result:
-                p1, p2 = create_fighters()  # リスタート
+                p1, p2 = create_fighters(menu)  # リスタート
                 tmr = 0
                 result = ""
 
         if not result:  # 対戦中の処理
             key_lst = pg.key.get_pressed()
             p1.handle_input(key_lst)
-            p2.action_cpu(p1)
+            if isinstance(p2, CPUFighter):
+                p2.action_cpu(p1)
+            else:
+                p2.handle_input(key_lst)
             p1.update()
             p2.update()
             push_apart(p1, p2)
