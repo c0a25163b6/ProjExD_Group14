@@ -498,6 +498,31 @@ def cpu_mode_select(screen: pg.Surface,
         clock.tick(FPS)
 
 
+def menu_flow(screen: pg.Surface,
+              font_s: pg.font.Font,
+              font_l: pg.font.Font,
+              clock: pg.time.Clock) -> str | None:
+    """
+    タイトルから難易度選択までの画面の流れの管理
+    引数 screen : 表示用
+    引数 font_s/l : タイトル、モード選択フォント用
+    引数 clock : タイマー用
+    戻り値 : str(weak,normal,strong), None(2p対戦用),
+            タイトルEscでゲーム終了,
+            難易度選択でescでタイトルに戻る
+    """
+    while True:
+        title = title_select(screen, font_s, font_l, clock)
+        if title == "2p":
+            return None
+        elif title == "cpu":
+            mode_select = cpu_mode_select(screen, font_s, font_l, clock)
+            if mode_select is not None:
+                return mode_select
+        elif title == "controls":
+            pass
+
+
 def main() -> None:
     pg.display.set_caption("2D格闘ゲーム（仮）")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
