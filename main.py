@@ -37,8 +37,14 @@ AVOID_BACK_WALL_CHECK = 30  # CPU回避時の壁際判定の定数
 GAME_TITLE = "FIGHTERS"  # ゲームタイトル
 BACK_SELECT = "ESC : BACK"  # メニューセレクトのバックボタン用
 CPU_MODE_TITLE = "CPU MODE SELECT"  # cpuのモードセレクトタイトル
+CONTROLS_TITLE = "CONTROLS"  # 操作説明のタイトル
 MENU_TOP_Y = HEIGHT // 2  # メニューのテキスト表示の最上層部分
 MENU_LINE_GAP = 60  # テキストの間隔
+CONTROLS = {
+    "move": "A/D",
+    "jump": "W",
+    "attack": "F",
+}
 TITLE = {
     "2p": "1 : 2P BATTLE",
     "cpu": "2 : CPU BATTLE",
@@ -503,6 +509,40 @@ def cpu_mode_select(screen: pg.Surface,
         clock.tick(FPS)
 
 
+def controls(screen: pg.Surface,
+             font_s: pg.font.Font,
+             font_l: pg.font.Font,
+             clock: pg.time.Clock) -> None:
+    """
+    操作説明の画面
+    引数 screen : 表示用
+    引数 font_s/l : フォント用
+    引数 clock : タイマー用
+    戻り値 : Escで戻ったらNone
+    """
+    bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
+    while True:
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                pg.quit()
+                sys.exit()
+            if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
+                return None
+        if bg_img is not None:
+            screen.blit(bg_img, (0, 0))
+        else:
+            screen.fill((30, 30, 50))
+            pg.draw.rect(screen, (90, 70, 50), (0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y))
+        draw_center_text(screen=screen, text=CONTROLS_TITLE, font=font_l, y=HEIGHT // 4)
+        for i, text in enumerate(CONTROLS.values()):
+            draw_center_text(screen=screen, text=text, font=font_s,
+                             y=MENU_TOP_Y + i * MENU_LINE_GAP)
+        draw_center_text(screen=screen, text=BACK_SELECT, font=font_s,
+                         y=MENU_TOP_Y + len(CONTROLS) * MENU_LINE_GAP)
+        pg.display.update()
+        clock.tick(FPS)
+
+
 def menu_flow(screen: pg.Surface,
               font_s: pg.font.Font,
               font_l: pg.font.Font,
@@ -525,7 +565,7 @@ def menu_flow(screen: pg.Surface,
             if mode_select is not None:
                 return mode_select
         elif title == "controls":
-            pass
+            controls(screen, font_s, font_l, clock)
 
 
 def main() -> None:
