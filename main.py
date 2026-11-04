@@ -300,7 +300,8 @@ def create_fighters(mode: str | None) -> tuple[Fighter, Fighter]:
     if mode is None:
         p2 = Fighter("P2", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80))
     else:
-        p2 = CPUFighter("CPU", 750, -1, P2_KEYS, "fig/p2.png", (255, 80, 80), mode)
+        p2 = CPUFighter(f'CPU {mode.upper()}', 750, -1, P2_KEYS,
+                        "fig/p2.png", (255, 80, 80), mode)
     return p1, p2
 
 
@@ -322,18 +323,22 @@ class DifficultyTuple(NamedTuple):
     think_interval: int  # 思考速度のインターバル
     attack_rate: float  # 攻撃レート
     avoid_rate: float  # 回避レート
+    think_jitter: int  # 思考のゆらぎ
 
 
 DIFFICULTY = {
     "weak": DifficultyTuple(think_interval=45,
                             attack_rate=0.3,
-                            avoid_rate=0.15),
+                            avoid_rate=0.15,
+                            think_jitter=15),
     "normal": DifficultyTuple(think_interval=30,
                               attack_rate=0.5,
-                              avoid_rate=0.3),
+                              avoid_rate=0.3,
+                              think_jitter=6),
     "strong": DifficultyTuple(think_interval=15,
                               attack_rate=0.75,
-                              avoid_rate=0.75),
+                              avoid_rate=0.75,
+                              think_jitter=2),
 }
 
 
@@ -413,6 +418,8 @@ class CPUFighter(Fighter):
         引数 enemy: 相手キャラ
         戻り値: None
         """
+        interval = self.difficulty_param.think_interval
+        jitter = self.difficulty_param.think_jitter
         if self.hitstun > 0:
             self.was_hit = True
             return
@@ -421,7 +428,8 @@ class CPUFighter(Fighter):
             self.was_hit = False
         if self.think_timer <= 0:
             self.action = self.think_action(enemy)
-            self.think_timer = self.difficulty_param.think_interval
+            self.think_timer = (max(0, interval +
+                                    random.randint(-jitter, jitter)))
         else:
             self.think_timer -= 1
         if self.action.left:
