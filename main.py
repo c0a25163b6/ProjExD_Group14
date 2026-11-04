@@ -32,6 +32,8 @@ ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
 HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
 KNOCKBACK = 12  # 攻撃を受けたときに押し戻される距離
 ADJUSTING_CPU_ATTACK_POINT = -10  # cpuが攻撃するときの攻撃計算の補助判定
+AVOID_CHOICE_STANDARD_RATE = 0.33  # cpuが回避するときの逃げの選択基準の境目
+AVOID_BACK_WALL_CHECK = 30  # CPU回避時の壁際判定の定数
 
 
 @dataclass
@@ -333,7 +335,31 @@ class CPUFighter(Fighter):
         distant_player = abs(enemy.rect.centerx - self.rect.centerx)  # 相手との距離計算
         attack_range = (FIGHTER_W//2 + ATTACK_W + FIGHTER_W//2
                         + ADJUSTING_CPU_ATTACK_POINT)  # 攻撃可能かどうかの判定を行うための計算
-        attack_random_rate = random.random()
+        attack_random_rate = random.random()  # 攻撃頻度のランダム数
+        avoid_random_rate = random.random()  # 回避のランダム数
+        avoid_choice_select = random.random()  # 回避選択のランダム数
+        if enemy.cooldown == 0:
+            if attack_range >= distant_player:
+                if avoid_random_rate <= self.difficulty_param.avoid_rate:
+                    if (self.rect.left <= AVOID_BACK_WALL_CHECK or
+                            self.rect.right >= WIDTH - AVOID_BACK_WALL_CHECK):
+                        if avoid_choice_select < AVOID_CHOICE_STANDARD_RATE * 2:
+                            return MoveTuple(jump=True)
+                        else:
+                            pass  # 後でdefenceに変更
+                    else:
+                        if avoid_choice_select < AVOID_CHOICE_STANDARD_RATE:
+                            return MoveTuple(jump=True)
+                        elif (AVOID_CHOICE_STANDARD_RATE <=
+                              avoid_choice_select <
+                              AVOID_CHOICE_STANDARD_RATE * 2):
+                            if self.facing == +1:
+                                return MoveTuple(left=True)
+                            else:
+                                return MoveTuple(right=True)
+                        else:
+                            pass  # 後でdefenceに変更
+
         if attack_range >= distant_player:
             if attack_random_rate <= self.difficulty_param.attack_rate:
                 return MoveTuple(attack=0)
