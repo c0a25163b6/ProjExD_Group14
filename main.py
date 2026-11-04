@@ -37,8 +37,12 @@ SUPER_GAGE_REQUIRE = 15  # 必殺技発動に必要なゲージ量
 SUPER_GAGE_ATTACK_DAMAGE = 20  # 必殺技のダメージ
 SUPER_GAGE_ATTACK_FRAMES = 100  # 必殺技が出ている時間（フレーム）
 SUPER_SPEED = 30  # 必殺技の移動速度(ピクセル数/フレーム)
-# 必殺技をためるためのコンボ数とコンボ継続時間の設定(必殺技)
-COMBO_RESET_FRAMES = 90  # コンボが途切れるまでの時間
+DAMAGE_GAUGE_UP = 5  # ダメージを受けたときのゲージ増加量
+COMBO_DAMAGE_RATE = 0.1  # コンボごとのダメージ減少率
+MIN_DAMAGE_RATE = 0.5  # 基本ダメージの50％を下限にする
+MAX_COMBO_COUNT = 10  # 最大コンボ数
+COMBO_RESET_FRAMES = 90  # 最後のヒットからコンボ表示が消えるまでの時間
+COMBO_LINK_FRAMES = 35  # 前のヒットからこのフレーム以内に当てるとコンボ継続
 
 
 @dataclass
@@ -51,6 +55,7 @@ class KeyConfig:
     jump: int
     attack: int
     special: int
+
 
 P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d, jump=pg.K_w, attack=pg.K_f, special=pg.K_g)
 P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT, jump=pg.K_UP, attack=pg.K_l, special=pg.K_j)
@@ -70,6 +75,7 @@ def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     img.fill(color)
     pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))  # 向きが分かるように目を描く
     return img
+
 
 class SuperAttack(pg.sprite.Sprite):
     """
@@ -97,12 +103,13 @@ class SuperAttack(pg.sprite.Sprite):
         self.speed = SUPER_SPEED * fighter.facing  # キャラクターの向きに合わせて移動速度を決める。
         self.damage = SUPER_GAGE_ATTACK_DAMAGE  # 必殺技のダメージ量を設定する。
         self.owner = fighter  # 必殺技を出したキャラクターを記録する。(必殺技が誰のものか判定するため)
- 
 
-    def update(self):
+    def update(self) -> None:
+        """必殺技を移動させ、画面外に出たら削除する。"""
         self.rect.x += self.speed  # 必殺技を移動させる
         if self.rect.right < 0 or self.rect.left > WIDTH:  # 画面外に出たら消す
             self.kill()  # 必殺技を消す
+
 
 class Fighter(pg.sprite.Sprite):
     """
@@ -191,15 +198,24 @@ class Fighter(pg.sprite.Sprite):
 
     def take_damage(self, damage: int, from_dir: int) -> None:
         """
-        ダメージを受けてのけぞる
+        ダメージを受けてのけぞる。
         引数 damage：受けるダメージ量
         引数 from_dir：押し戻される向き（右:+1, 左:-1）
         """
+        # ダメージを受けたら、自分が続けていたコンボをリセットする
+        self.combo_count = 0
+        self.combo_timer = 0
         self.hp = max(0, self.hp - damage)
         self.hitstun = HITSTUN_FRAMES
         self.attack_timer = 0  # 攻撃を潰される
         self.rect.x += KNOCKBACK * from_dir
-        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))  # 画面外に押し出されないようにする
+        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
+
+        # ダメージを受けたら必殺技ゲージを増やす
+        self.super_gauge = min(
+            MAX_SUPER_GAGE,
+            self.super_gauge + DAMAGE_GAUGE_UP
+        )
 
     def update(self) -> None:
         """
@@ -216,7 +232,7 @@ class Fighter(pg.sprite.Sprite):
         self.hitstun = max(0, self.hitstun - 1)
         self.combo_timer = max(0, self.combo_timer - 1)
 
-        # コンボが途切れたらカウントをリセットする(必殺技)
+        # 最後のヒットから90フレーム経過したらコンボをリセットする
         if self.combo_timer == 0:
             self.combo_count = 0
 
@@ -231,37 +247,62 @@ class Fighter(pg.sprite.Sprite):
             pg.draw.rect(screen, (255, 220, 0), atk, 3)  # 攻撃判定を可視化
 
 
+def apply_hit(
+        attacker: Fighter,
+        defender: Fighter,
+        base_damage: int,
+        hitstun_frames: int = HITSTUN_FRAMES,
+) -> None:
+    """攻撃命中時のコンボ数とダメージを共通処理する。"""
+
+    frames_since_hit = COMBO_RESET_FRAMES - attacker.combo_timer
+    if attacker.combo_timer > 0 and frames_since_hit <= COMBO_LINK_FRAMES:
+        # 前回のヒットから35フレーム以内に当たったらコンボ継続
+        attacker.combo_count = min(MAX_COMBO_COUNT, attacker.combo_count + 1)
+    else:
+        # 前回のヒットから35フレームを超えたら新しいコンボにする
+        attacker.combo_count = 1
+
+    attacker.combo_timer = COMBO_RESET_FRAMES
+
+    damage_rate = max(
+        MIN_DAMAGE_RATE,
+        1 - (attacker.combo_count - 1) * COMBO_DAMAGE_RATE
+    )
+    damage = max(1, int(base_damage * damage_rate))
+    defender.take_damage(damage, attacker.facing)
+
+    # take_damage 側で付与されていなくても、ここで必ずのけぞらせる
+    defender.hitstun = max(defender.hitstun, hitstun_frames)
+
+
 def check_hit(attacker: Fighter, defender: Fighter) -> None:
-    """
-    攻撃側の攻撃が防御側に当たったか判定し、当たればダメージを与える
-    引数 attacker：攻撃側キャラ
-    引数 defender：防御側キャラ
-    """
+    """通常攻撃が当たったか判定し、ダメージとゲージを処理する。"""
     atk = attacker.get_attack_rect()
+
     if atk is None or attacker.has_hit:
         return
     if atk.colliderect(defender.rect):
-        defender.take_damage(ATTACK_DAMAGE, attacker.facing)
-        attacker.has_hit = True  # 1回の攻撃で多段ヒットしないようにする
+        # 通常攻撃と必殺技で共通のコンボ・ダメージ処理を使う
+        apply_hit(attacker, defender, ATTACK_DAMAGE)
 
-    # コンボによって必殺技が溜まる設定(必殺技)
-        # コンボ数とコンボ継続時間を更新
-        attacker.combo_count += 1
-        attacker.combo_timer = COMBO_RESET_FRAMES
+        # 今回の攻撃は命中済み
+        attacker.has_hit = True
 
-        # コンボ数に応じてゲージ増加量を変える
+        # コンボ数に応じて必殺技ゲージの増加量を決める
         if attacker.combo_count < 5:
             gauge_up = SUPER_GAGE_UP
-        elif attacker.combo_count < 10:
+        elif attacker.combo_count < MAX_COMBO_COUNT:
             gauge_up = SUPER_GAGE_UP * 2
-        elif attacker.combo_count < 20:
-            gauge_up = SUPER_GAGE_UP * 3
-        elif attacker.combo_count < 30:
-            gauge_up = SUPER_GAGE_UP * 4
         else:
-            gauge_up = SUPER_GAGE_UP * 5
+            gauge_up = SUPER_GAGE_UP * 3
 
-        attacker.super_gauge = min(MAX_SUPER_GAGE, attacker.super_gauge + gauge_up)  # 必殺技ゲージを増やす
+        # 攻撃が当たったら必殺技ゲージを増やす
+        attacker.super_gauge = min(
+            MAX_SUPER_GAGE,
+            attacker.super_gauge + gauge_up
+        )
+
 
 def push_apart(f1: Fighter, f2: Fighter) -> None:
     """
@@ -309,8 +350,6 @@ def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font
     if fighter.combo_count >= 2 and fighter.combo_timer > 0:
         combo_text = font.render(f"{fighter.combo_count} COMBO", True, (255, 230, 50))
         screen.blit(combo_text, (x, 98))
-
-
 
 
 def draw_center_text(screen: pg.Surface, text: str, font: pg.font.Font, y: int) -> None:
@@ -378,7 +417,7 @@ def main() -> None:
             p1.handle_input(key_lst)
             p2.handle_input(key_lst)
 
-            # 必殺技キーが押され、ゲージが満タンなら必殺技を発射（必殺技のキーは仮とする）
+            # 必殺技キーが押され、ゲージが満タンなら必殺技を発射
             if key_lst[p1.keys.special] and p1.super_gauge >= SUPER_GAGE_REQUIRE:
                 super_attacks.add(SuperAttack(p1))
                 p1.super_gauge = 0
@@ -396,24 +435,25 @@ def main() -> None:
             check_hit(p1, p2)
             check_hit(p2, p1)
 
-            # 必殺技が相手に当たったか判定(必殺技)
+            # 必殺技が相手に当たったか判定
             for super_attack in list(super_attacks):  # 必殺技を一つずつ確認
                 if super_attack.owner is p1:  # 誰が撃った弾なのか確認する
                     defender = p2
                 else:
                     defender = p1
 
-                if super_attack.rect.colliderect(defender.rect):  # 必殺技が相手に当たったか判定
-                    defender.take_damage(super_attack.damage, super_attack.owner.facing)  # 相手にダメージを与える
+                if super_attack.rect.colliderect(defender.rect):
+                    apply_hit(
+                        super_attack.owner,
+                        defender,
+                        super_attack.damage
+                    )
                     super_attack.kill()  # 必殺技を消す
 
             tmr += 1
             remain = ROUND_TIME - tmr // FPS
             if p1.hp <= 0 or p2.hp <= 0 or remain <= 0:
                 result = judge_winner(p1, p2)
-
-
-
 
         # 描画
         if bg_img is not None:
@@ -433,6 +473,7 @@ def main() -> None:
             draw_center_text(screen, "R: Restart  /  Esc: Quit", font_s, HEIGHT // 2 + 30)
         pg.display.update()
         clock.tick(FPS)
+
 
 if __name__ == "__main__":
     pg.init()
