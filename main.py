@@ -1033,7 +1033,7 @@ def main() -> None:
                         p1.super_gauge = 0
                         p1.special_pose_timer = 30
 
-                    if key_lst[p2.keys.special] and p2.super_gauge >= SUPER_GAGE_REQUIRE and p2.special_pose_timer == 0:
+                    if key_lst[p2.keys.special] and p2.super_gauge >= SUPER_GAGE_REQUIRE and p2.special_pose_timer == 0 and not isinstance(p2, CPUFighter):
                         super_attacks.add(SuperAttack(p2))
                         p2.super_gauge = 0
                         p2.special_pose_timer = 30
