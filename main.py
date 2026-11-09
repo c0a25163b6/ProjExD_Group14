@@ -20,7 +20,7 @@ ROUND_TIME = 60  # 1ラウンドの制限時間（秒）
 
 FIGHTER_W = 80  # キャラの幅（当たり判定）
 FIGHTER_H = 160  # キャラの高さ（当たり判定）
-MAX_HP = 100  # 最大体力
+MAX_HP = 200  # 最大体力
 WALK_SPEED = 5  # 歩く速さ
 JUMP_POWER = 20  # ジャンプの初速
 
@@ -324,21 +324,33 @@ class DifficultyTuple(NamedTuple):
     attack_rate: float  # 攻撃レート
     avoid_rate: float  # 回避レート
     think_jitter: int  # 思考のゆらぎ
+    max_combo: int  # 最大コンボ数
+    chase_rate: float  # 追撃レート
+    whiff_back_avoid: float  # 空振り時回避レート
 
 
 DIFFICULTY = {
     "weak": DifficultyTuple(think_interval=45,
                             attack_rate=0.3,
                             avoid_rate=0.15,
-                            think_jitter=15),
+                            think_jitter=15,
+                            max_combo=3,
+                            chase_rate=0.3,
+                            whiff_back_avoid=0.4),
     "normal": DifficultyTuple(think_interval=30,
                               attack_rate=0.5,
                               avoid_rate=0.3,
-                              think_jitter=6),
+                              think_jitter=6,
+                              max_combo=6,
+                              chase_rate=0.5,
+                              whiff_back_avoid=0.75),
     "strong": DifficultyTuple(think_interval=15,
                               attack_rate=0.75,
                               avoid_rate=0.75,
-                              think_jitter=2),
+                              think_jitter=2,
+                              max_combo=10,
+                              chase_rate=0.8,
+                              whiff_back_avoid=0.9),
 }
 
 
@@ -367,6 +379,8 @@ class CPUFighter(Fighter):
         self.think_timer = 0  # 次の思考までの残りフレーム数
         self.action = MoveTuple()  # 行動選択
         self.was_hit = False  # 直前に攻撃を受けたかどうかの判定
+        self.chase_count = 0  # 追撃カウント
+        self.attack_hit = False  # 攻撃判定瞬間記録用
 
     def think_action(self, enemy: Fighter) -> MoveTuple:
         """
@@ -380,6 +394,31 @@ class CPUFighter(Fighter):
         attack_random_rate = random.random()  # 攻撃頻度のランダム数
         avoid_random_rate = random.random()  # 回避のランダム数
         avoid_choice_select = random.random()  # 回避選択のランダム数
+        chase_random = random.random()  # 追撃ランダム数
+        whiff_random = random.random()  # 後退回避ランダム数
+        if enemy.hitstun > 0:
+            if self.chase_count < self.difficulty_param.max_combo:
+                if (distant_player <= attack_range and
+                        chase_random < self.difficulty_param.chase_rate):
+                    self.chase_count += 1
+                    return MoveTuple(attack=0)
+                else:
+                    if self.facing == +1:
+                        return MoveTuple(right=True)
+                    else:
+                        return MoveTuple(left=True)
+            elif self.chase_count == self.difficulty_param.max_combo:
+                if self.facing == +1:
+                    return MoveTuple(left=True)
+                else:
+                    return MoveTuple(right=True)
+        else:
+            self.chase_count = 0
+            if self.cooldown > 0 and whiff_random < self.difficulty_param.whiff_back_avoid:
+                if self.facing == +1:
+                    return MoveTuple(left=True)
+                else:
+                    return MoveTuple(right=True)
         if enemy.cooldown == 0:
             if attack_range >= distant_player:
                 if avoid_random_rate <= self.difficulty_param.avoid_rate:
@@ -423,6 +462,9 @@ class CPUFighter(Fighter):
         if self.hitstun > 0:
             self.was_hit = True
             return
+        if not self.attack_hit and self.has_hit:
+            self.think_timer = 0
+        self.attack_hit = self.has_hit
         if self.was_hit:
             self.think_timer = 0
             self.was_hit = False
