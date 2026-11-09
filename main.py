@@ -26,6 +26,11 @@ JUMP_POWER = 20  # ジャンプの初速
 
 ATTACK_W = 70  # 攻撃判定の幅
 ATTACK_H = 40  # 攻撃判定の高さ
+PUNCH_W = 60  # マージ時置き換え
+KICK_W = 90  # マージ時置き換え
+UPPER_W = 50  # マージ時置き換え
+UPPER_MOVE = 30  # マージ置き換え
+AIR_W = 70  # マージ置き換え
 ATTACK_DAMAGE = 8  # 攻撃1回のダメージ
 ATTACK_FRAMES = 15  # 攻撃が出ている時間（フレーム）
 ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
@@ -312,8 +317,9 @@ class MoveTuple(NamedTuple):
     left: bool = False  # 左移動
     right: bool = False  # 右移動
     jump: bool = False  # ジャンプ
-    attack: int | None = None  # 攻撃
-    defence: bool = False  # 防御
+    attack: str | None = None  # 攻撃
+    defence: str | None = None  # 防御
+    special: bool = False  # 必殺技
 
 
 class DifficultyTuple(NamedTuple):
@@ -382,6 +388,30 @@ class CPUFighter(Fighter):
         self.chase_count = 0  # 追撃カウント
         self.attack_hit = False  # 攻撃判定瞬間記録用
 
+    def select_action(self, enemy: Fighter, distance: int) -> str | None:
+        """
+        技選択用メソッド
+        引数 enemy (Fighter): 敵キャラ
+        引数 distance (int): 相手との距離
+        戻り値 str | None: 技
+        """
+        punch_range = (FIGHTER_W//2 + PUNCH_W + FIGHTER_W//2
+                       + ADJUSTING_CPU_ATTACK_POINT)  # 攻撃可能かどうかの判定を行うための計算(punch)
+        kick_range = (FIGHTER_W//2 + KICK_W + FIGHTER_W//2
+                      + ADJUSTING_CPU_ATTACK_POINT)  # 攻撃可能かどうかの判定を行うための計算(kick)
+        upper_range = (UPPER_MOVE + (UPPER_W + FIGHTER_W)//2)  # 攻撃可能かどうかの判定を行うための計算(upper)
+        air_range = (AIR_W + FIGHTER_W//2)  # 攻撃可能かどうかの判定を行うための計算(air)
+        if not self.is_on_ground() and distance <= air_range:
+            return "air"
+        if not enemy.is_on_ground() and distance <= upper_range:
+            return "upper"
+        if distance <= punch_range:
+            return "punch"
+        if distance <= kick_range:
+            return "kick"
+        else:
+            return None
+
     def think_action(self, enemy: Fighter) -> MoveTuple:
         """
         距離や攻撃範囲を確認して攻撃、移動を判断する
@@ -389,8 +419,7 @@ class CPUFighter(Fighter):
         戻り値 : MoveTuple
         """
         distant_player = abs(enemy.rect.centerx - self.rect.centerx)  # 相手との距離計算
-        attack_range = (FIGHTER_W//2 + ATTACK_W + FIGHTER_W//2
-                        + ADJUSTING_CPU_ATTACK_POINT)  # 攻撃可能かどうかの判定を行うための計算
+        decide_action = self.select_action(enemy, distant_player)
         attack_random_rate = random.random()  # 攻撃頻度のランダム数
         avoid_random_rate = random.random()  # 回避のランダム数
         avoid_choice_select = random.random()  # 回避選択のランダム数
@@ -398,10 +427,10 @@ class CPUFighter(Fighter):
         whiff_random = random.random()  # 後退回避ランダム数
         if enemy.hitstun > 0:
             if self.chase_count < self.difficulty_param.max_combo:
-                if (distant_player <= attack_range and
+                if (decide_action is not None and
                         chase_random < self.difficulty_param.chase_rate):
                     self.chase_count += 1
-                    return MoveTuple(attack=0)
+                    return MoveTuple(attack=decide_action)
                 else:
                     if self.facing == +1:
                         return MoveTuple(right=True)
@@ -420,7 +449,7 @@ class CPUFighter(Fighter):
                 else:
                     return MoveTuple(right=True)
         if enemy.cooldown == 0:
-            if attack_range >= distant_player:
+            if decide_action is not None:
                 if avoid_random_rate <= self.difficulty_param.avoid_rate:
                     if (self.rect.left <= AVOID_BACK_WALL_CHECK or
                             self.rect.right >= WIDTH - AVOID_BACK_WALL_CHECK):
@@ -441,9 +470,9 @@ class CPUFighter(Fighter):
                         else:
                             pass  # 後でdefenceに変更
 
-        if attack_range >= distant_player:
+        if decide_action is not None:
             if attack_random_rate <= self.difficulty_param.attack_rate:
-                return MoveTuple(attack=0)
+                return MoveTuple(attack=decide_action)
             else:
                 return MoveTuple()
         elif self.facing == +1:
