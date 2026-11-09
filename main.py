@@ -45,10 +45,28 @@ CPU_MODE_TITLE = "CPU MODE SELECT"  # cpuのモードセレクトタイトル
 CONTROLS_TITLE = "CONTROLS"  # 操作説明のタイトル
 MENU_TOP_Y = HEIGHT // 2  # メニューのテキスト表示の最上層部分
 MENU_LINE_GAP = 60  # テキストの間隔
-CONTROLS = {
-    "move": "A/D",
-    "jump": "W",
-    "attack": "F",
+DEF_CHOICE_RATE = 0.5  # 防御判断の基準レート
+TEXT_SPACE = 35  # 文字の間隔
+TEXT_TOP = MENU_TOP_Y - 80  # 文字記載の開始位置
+CONTROLS_1P = {
+    "move": "LEFT/RIGHT: A/D",
+    "jump": "JUMP: W",
+    "punch": "PUNCH: C",
+    "kick": "KICK: V",
+    "upper": "UPPER: F",
+    "barrier_up": "BARRIER_UP: R",
+    "barrier_md": "BARRIER_MD: S",
+    "special": "SPECIAL: Z"
+}
+CONTROLS_2P = {
+    "move": "LEFT/RIGHT: LEFT/RIGHT",
+    "jump": "JUMP: UP",
+    "punch": "PUNCH: ,",
+    "kick": "KICK: M",
+    "upper": "UPPER: K",
+    "barrier_up": "BARRIER_UP: /",
+    "barrier_md": "BARRIER_MD: DOWN",
+    "special": "SPECIAL: P"
 }
 TITLE = {
     "2p": "1 : 2P BATTLE",
@@ -412,6 +430,20 @@ class CPUFighter(Fighter):
         else:
             return None
 
+    def select_defence(self, enemy: Fighter) -> str:
+        """
+        防御を選択するようメソッド
+        引数 enemy: 相手キャラ
+        戻り値 str
+        """
+        if not enemy.is_on_ground():
+            return "up"
+        else:
+            if DEF_CHOICE_RATE >= random.random():
+                return "up"
+            else:
+                return "md"
+
     def think_action(self, enemy: Fighter) -> MoveTuple:
         """
         距離や攻撃範囲を確認して攻撃、移動を判断する
@@ -420,6 +452,7 @@ class CPUFighter(Fighter):
         """
         distant_player = abs(enemy.rect.centerx - self.rect.centerx)  # 相手との距離計算
         decide_action = self.select_action(enemy, distant_player)
+        decide_defence = self.select_defence(enemy)
         attack_random_rate = random.random()  # 攻撃頻度のランダム数
         avoid_random_rate = random.random()  # 回避のランダム数
         avoid_choice_select = random.random()  # 回避選択のランダム数
@@ -456,7 +489,7 @@ class CPUFighter(Fighter):
                         if avoid_choice_select < AVOID_CHOICE_STANDARD_RATE * 2:
                             return MoveTuple(jump=True)
                         else:
-                            pass  # 後でdefenceに変更
+                            return MoveTuple(defence=decide_defence)
                     else:
                         if avoid_choice_select < AVOID_CHOICE_STANDARD_RATE:
                             return MoveTuple(jump=True)
@@ -468,7 +501,7 @@ class CPUFighter(Fighter):
                             else:
                                 return MoveTuple(right=True)
                         else:
-                            pass  # 後でdefenceに変更
+                            return MoveTuple(defence=decide_defence)
 
         if decide_action is not None:
             if attack_random_rate <= self.difficulty_param.attack_rate:
@@ -613,11 +646,21 @@ def controls(screen: pg.Surface,
             screen.fill((30, 30, 50))
             pg.draw.rect(screen, (90, 70, 50), (0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y))
         draw_center_text(screen=screen, text=CONTROLS_TITLE, font=font_l, y=HEIGHT // 4)
-        for i, text in enumerate(CONTROLS.values()):
-            draw_center_text(screen=screen, text=text, font=font_s,
-                             y=MENU_TOP_Y + i * MENU_LINE_GAP)
-        draw_center_text(screen=screen, text=BACK_SELECT, font=font_s,
-                         y=MENU_TOP_Y + len(CONTROLS) * MENU_LINE_GAP)
+        player_1 = font_s.render("1P", True, (255, 255, 255))
+        player_2 = font_s.render("2P", True, (255, 255, 255))
+        back = font_s.render("ESC: BACK", True, (255, 255, 255))
+        screen.blit(player_1, player_1.get_rect(center=(WIDTH // 4, TEXT_TOP - TEXT_SPACE)))
+        screen.blit(player_2, player_2.get_rect(center=(WIDTH * 3 // 4, TEXT_TOP - TEXT_SPACE)))
+        draw_center_text(screen=screen, text=BACK_SELECT,
+                         font=font_s, y=TEXT_TOP + len(CONTROLS_1P) * TEXT_SPACE)
+        for i, text_1p in enumerate(CONTROLS_1P.values()):
+            y = TEXT_TOP + i * TEXT_SPACE
+            txt_1p = font_s.render(text_1p, True, (255, 255, 255))
+            screen.blit(txt_1p, txt_1p.get_rect(center=(WIDTH // 4, y)))
+        for i, text_2p in enumerate(CONTROLS_2P.values()):
+            y = TEXT_TOP + i * TEXT_SPACE
+            txt_2p = font_s.render(text_2p, True, (255, 255, 255))
+            screen.blit(txt_2p, txt_2p.get_rect(center=(WIDTH * 3 // 4, y)))
         pg.display.update()
         clock.tick(FPS)
 
