@@ -22,28 +22,70 @@ MAX_HP = 100  # 最大体力
 WALK_SPEED = 5  # 歩く速さ
 JUMP_POWER = 20  # ジャンプの初速
 
-ATTACK_W = 70  # 攻撃判定の幅
-ATTACK_H = 40  # 攻撃判定の高さ
-ATTACK_DAMAGE = 8  # 攻撃1回のダメージ
-ATTACK_FRAMES = 15  # 攻撃が出ている時間（フレーム）
-ATTACK_COOLDOWN = 25  # 次に攻撃できるまでの時間（フレーム）
-HITSTUN_FRAMES = 12  # 攻撃を受けて動けない時間（フレーム）
-KNOCKBACK = 12  # 攻撃を受けたときに押し返される
+# --- 各種技の性能設定 ---
+# パンチ（Cキー / カンマキー：小技、ヒットキャンセル可能）
+PUNCH_W, PUNCH_H = 60, 30
+PUNCH_DAMAGE = 5
+PUNCH_FRAMES, PUNCH_COOLDOWN = 8, 14
+
+# キック（Vキー / Mキー：コンボ締め用の重い技、キャンセル不可）
+KICK_W, KICK_H = 90, 40
+KICK_DAMAGE = 12
+KICK_FRAMES, KICK_COOLDOWN = 14, 28
+
+# アッパーカット（Fキー / Kキー：単体対空技）
+UPPER_W, UPPER_H = 50, 90
+UPPER_DAMAGE = 15
+UPPER_FRAMES, UPPER_COOLDOWN = 16, 30
+
+# ジャンプ攻撃（空中攻撃）
+AIR_W, AIR_H = 70, 60
+AIR_DAMAGE = 8
+AIR_FRAMES, AIR_COOLDOWN = 12, 18
+
+HITSTUN_FRAMES = 12  # のけぞり時間（通常連打では繋がらない長さ）
+KNOCKBACK = 20  # ノックバック距離（大きく飛ばして目押しなしの連打ハメを防止）
+MAX_COMBO_LIMIT = 10  # 最大コンボ上限（10ヒットで相手は強制復帰・ダウン立ち上がり）
+
+ATTACK_W = PUNCH_W
+ATTACK_H = PUNCH_H
+ATTACK_DAMAGE = PUNCH_DAMAGE
+ATTACK_FRAMES = PUNCH_FRAMES
+ATTACK_COOLDOWN = PUNCH_COOLDOWN
 
 
 @dataclass
 class KeyConfig:
     """
-    プレイヤーごとのキー割り当て
+    プレイヤーごとのキー割り当て（移動・攻撃用）
     """
     left: int
     right: int
     jump: int
-    attack: int
+    punch: int  # パンチ用キー
+    kick: int   # キック用キー
+    upper: int  # アッパー用キー
 
 
-P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d, jump=pg.K_w, attack=pg.K_f)
-P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT, jump=pg.K_UP, attack=pg.K_l)
+# P1: WASD(移動), C(パンチ), V(キック), F(アッパー)
+P1_KEYS = KeyConfig(
+    left=pg.K_a,
+    right=pg.K_d,
+    jump=pg.K_w,
+    punch=pg.K_c,
+    kick=pg.K_v,
+    upper=pg.K_f
+)
+
+# P2: 矢印(移動), ,(パンチ), M(キック), K(アッパー)
+P2_KEYS = KeyConfig(
+    left=pg.K_LEFT,
+    right=pg.K_RIGHT,
+    jump=pg.K_UP,
+    punch=pg.K_COMMA,
+    kick=pg.K_m,
+    upper=pg.K_k
+)
 
 
 def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
@@ -58,7 +100,7 @@ def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
         return pg.transform.scale(img, (FIGHTER_W, FIGHTER_H))
     img = pg.Surface((FIGHTER_W, FIGHTER_H))
     img.fill(color)
-    pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))  # 向きが分かるように目を描く
+    pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))
     return img
 
 
@@ -88,18 +130,40 @@ class Fighter(pg.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.bottom = GROUND_Y
-        self.vy = 0  # 縦方向の速度
+        self.vy = 0
         self.hp = MAX_HP
-        self.attack_timer = 0  # 攻撃判定が残っているフレーム数
-        self.cooldown = 0  # 次の攻撃までの待ちフレーム数
-        self.hitstun = 0  # のけぞりの残りフレーム数
-        self.has_hit = False  # 今回の攻撃がすでに当たったか
+        self.attack_timer = 0 # 攻撃判定が残っているフレーム数
+        self.cooldown = 0 # 次の攻撃までの待ちフレーム数
+        self.hitstun = 0 # のけぞりの残りフレーム数
+        self.has_hit = False # 今回の攻撃がすでに当たったか
+
+        self.attack_type: str | None = None
+        self.current_damage = 0
+        self.can_cancel = False
+        self.combo_count = 0
+
+        self.prev_punch = False
+        self.prev_kick = False
+        self.prev_upper = False
 
     def is_on_ground(self) -> bool:
         """
         地面に立っているかを返す
         """
         return self.rect.bottom >= GROUND_Y
+
+    def start_attack(
+        self, atk_type: str, frames: int, cooldown: int, damage: int
+    ) -> None:
+        """
+        技を発動し、パラメータとキャンセル状態を更新する
+        """
+        self.attack_type = atk_type
+        self.attack_timer = frames
+        self.cooldown = cooldown
+        self.current_damage = damage
+        self.has_hit = False
+        self.can_cancel = False
 
     def handle_input(self, key_lst: pg.key.ScancodeWrapper) -> None:
         """
@@ -108,18 +172,36 @@ class Fighter(pg.sprite.Sprite):
         """
         if self.hitstun > 0:  # のけぞり中は操作できない
             return
+        
         dx = 0
         if key_lst[self.keys.left]:
             dx -= WALK_SPEED
         if key_lst[self.keys.right]:
             dx += WALK_SPEED
         self.rect.x += dx
+
         if key_lst[self.keys.jump] and self.is_on_ground():
             self.vy = -JUMP_POWER
-        if key_lst[self.keys.attack] and self.cooldown == 0:
-            self.attack_timer = ATTACK_FRAMES
-            self.cooldown = ATTACK_COOLDOWN
-            self.has_hit = False
+
+        punch_trig = key_lst[self.keys.punch] and not self.prev_punch
+        kick_trig = key_lst[self.keys.kick] and not self.prev_kick
+        upper_trig = key_lst[self.keys.upper] and not self.prev_upper
+
+        can_act = (self.cooldown == 0) or self.can_cancel
+
+        if can_act:
+            if not self.is_on_ground() and (punch_trig or kick_trig):
+                self.start_attack("air", AIR_FRAMES, AIR_COOLDOWN, AIR_DAMAGE)
+            elif self.is_on_ground() and upper_trig:
+                self.start_attack("upper", UPPER_FRAMES, UPPER_COOLDOWN, UPPER_DAMAGE)
+            elif punch_trig:
+                self.start_attack("punch", PUNCH_FRAMES, PUNCH_COOLDOWN, PUNCH_DAMAGE)
+            elif kick_trig:
+                self.start_attack("kick", KICK_FRAMES, KICK_COOLDOWN, KICK_DAMAGE)
+
+        self.prev_punch = bool(key_lst[self.keys.punch])
+        self.prev_kick = bool(key_lst[self.keys.kick])
+        self.prev_upper = bool(key_lst[self.keys.upper])
 
     def face_to(self, other: "Fighter") -> None:
         """
@@ -131,33 +213,54 @@ class Fighter(pg.sprite.Sprite):
 
     def get_attack_rect(self) -> pg.Rect | None:
         """
-        攻撃判定の矩形を返す（攻撃中でなければNone）
+        攻撃判定の矩形を返す
         """
         if self.attack_timer <= 0:
             return None
-        atk = pg.Rect(0, 0, ATTACK_W, ATTACK_H)
-        atk.centery = self.rect.top + FIGHTER_H // 3
-        if self.facing == 1:
-            atk.left = self.rect.right
-        else:
-            atk.right = self.rect.left
+
+        if self.attack_type == "upper":
+            atk = pg.Rect(0, 0, UPPER_W, UPPER_H)
+            atk.bottom = self.rect.top + 20
+            atk.centerx = self.rect.centerx + (30 * self.facing)
+        elif self.attack_type == "air":
+            atk = pg.Rect(0, 0, AIR_W, AIR_H)
+            atk.top = self.rect.centery
+            if self.facing == 1:
+                atk.left = self.rect.centerx
+            else:
+                atk.right = self.rect.centerx
+        elif self.attack_type == "punch":
+            atk = pg.Rect(0, 0, PUNCH_W, PUNCH_H)
+            atk.centery = self.rect.top + FIGHTER_H // 4
+            if self.facing == 1:
+                atk.left = self.rect.right
+            else:
+                atk.right = self.rect.left
+        else:  # "kick"
+            atk = pg.Rect(0, 0, KICK_W, KICK_H)
+            atk.centery = self.rect.top + (FIGHTER_H * 2) // 3
+            if self.facing == 1:
+                atk.left = self.rect.right
+            else:
+                atk.right = self.rect.left
+
         return atk
 
     def take_damage(self, damage: int, from_dir: int) -> None:
         """
         ダメージを受けてのけぞる
         引数 damage：受けるダメージ量
-        引数 from_dir：押し戻される向き（右:+1, 左:-1）
+        引数 from_dir：押し戻される向き（右:+1, 左:-1
         """
         self.hp = max(0, self.hp - damage)
         self.hitstun = HITSTUN_FRAMES
-        self.attack_timer = 0  # 攻撃を潰される
+        self.attack_timer = 0
         self.rect.x += KNOCKBACK * from_dir
-        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))  # 画面外に押し出されないようにする
+        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
 
     def update(self) -> None:
         """
-        重力・タイマー・画面端の処理を行う
+        重力・タイマー・画面端・のけぞり等の処理を行う
         """
         self.vy += GRAVITY
         self.rect.y += self.vy
@@ -165,9 +268,19 @@ class Fighter(pg.sprite.Sprite):
             self.rect.bottom = GROUND_Y
             self.vy = 0
         self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
+
         self.attack_timer = max(0, self.attack_timer - 1)
+        if self.attack_timer == 0:
+            self.attack_type = None
+
         self.cooldown = max(0, self.cooldown - 1)
-        self.hitstun = max(0, self.hitstun - 1)
+
+        if self.hitstun > 0:
+            self.hitstun -= 1
+            if self.hitstun == 0:
+                self.combo_count = 0
+        elif self.attack_timer == 0 and self.cooldown == 0:
+            self.can_cancel = False
 
     def draw(self, screen: pg.Surface) -> None:
         """
@@ -177,27 +290,35 @@ class Fighter(pg.sprite.Sprite):
         screen.blit(self.image, self.rect)
         atk = self.get_attack_rect()
         if atk is not None:
-            pg.draw.rect(screen, (255, 220, 0), atk, 3)  # 攻撃判定を可視化
+            pg.draw.rect(screen, (255, 220, 0), atk, 3)
 
 
 def check_hit(attacker: Fighter, defender: Fighter) -> None:
     """
-    攻撃側の攻撃が防御側に当たったか判定し、当たればダメージを与える
-    引数 attacker：攻撃側キャラ
-    引数 defender：防御側キャラ
+    攻撃判定と被弾処理。10コンボ到達時は相手を強制復帰させる
     """
     atk = attacker.get_attack_rect()
     if atk is None or attacker.has_hit:
         return
     if atk.colliderect(defender.rect):
-        defender.take_damage(ATTACK_DAMAGE, attacker.facing)
-        attacker.has_hit = True  # 1回の攻撃で多段ヒットしないようにする
+        defender.take_damage(attacker.current_damage, attacker.facing)
+        attacker.has_hit = True
+        attacker.combo_count += 1
+
+        # 10ヒット制限：10ヒットに達したら強制復帰（相手ののけぞり解除・コンボ終了）
+        if attacker.combo_count >= MAX_COMBO_LIMIT:
+            defender.hitstun = 0
+            attacker.combo_count = 0
+            attacker.can_cancel = False
+        else:
+            # キックはコンボ締め技のためキャンセル不可、パンチ等の小技のみキャンセル可能
+            if attacker.attack_type != "kick":
+                attacker.can_cancel = True
 
 
 def push_apart(f1: Fighter, f2: Fighter) -> None:
     """
-    キャラ同士が重ならないように押し離す
-    引数 f1, f2：キャラ
+    キャラ同士の押し合い判定
     """
     if not f1.rect.colliderect(f2.rect):
         return
@@ -216,10 +337,6 @@ def push_apart(f1: Fighter, f2: Fighter) -> None:
 def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font) -> None:
     """
     体力ゲージと名前を描画する
-    引数 screen：画面Surface
-    引数 fighter：対象キャラ
-    引数 x：ゲージ左端のx座標
-    引数 font：名前表示用フォント
     """
     bar_w, bar_h = 400, 24
     pg.draw.rect(screen, (80, 0, 0), (x, 20, bar_w, bar_h))
@@ -232,10 +349,6 @@ def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font
 def draw_center_text(screen: pg.Surface, text: str, font: pg.font.Font, y: int) -> None:
     """
     画面中央に文字を描画する
-    引数 screen：画面Surface
-    引数 text：表示する文字列
-    引数 font：フォント
-    引数 y：文字の中心のy座標
     """
     txt = font.render(text, True, (255, 255, 255))
     screen.blit(txt, txt.get_rect(center=(WIDTH // 2, y)))
@@ -244,8 +357,6 @@ def draw_center_text(screen: pg.Surface, text: str, font: pg.font.Font, y: int) 
 def judge_winner(p1: Fighter, p2: Fighter) -> str:
     """
     勝者を判定して表示用の文字列を返す
-    引数 p1, p2：キャラ
-    戻り値：結果の文字列
     """
     if p1.hp > p2.hp:
         return f"{p1.name} WIN!"
@@ -264,29 +375,31 @@ def create_fighters() -> tuple[Fighter, Fighter]:
 
 
 def main() -> None:
-    pg.display.set_caption("2D格闘ゲーム（仮）")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
+    pg.display.set_caption("2D格闘ゲーム（仮）")
     clock = pg.time.Clock()
     font_s = pg.font.Font(None, 36)
     font_l = pg.font.Font(None, 100)
     bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
 
     p1, p2 = create_fighters()
-    tmr = 0  # 経過フレーム数
-    result = ""  # 決着時の文字列（空なら対戦中）
+    tmr = 0
+    result = ""
 
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:
-                return
+                pg.quit()
+                sys.exit()
             if event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE:
-                return
+                pg.quit()
+                sys.exit()
             if event.type == pg.KEYDOWN and event.key == pg.K_r and result:
-                p1, p2 = create_fighters()  # リスタート
+                p1, p2 = create_fighters()
                 tmr = 0
                 result = ""
 
-        if not result:  # 対戦中の処理
+        if not result:
             key_lst = pg.key.get_pressed()
             p1.handle_input(key_lst)
             p2.handle_input(key_lst)
@@ -302,7 +415,6 @@ def main() -> None:
             if p1.hp <= 0 or p2.hp <= 0 or remain <= 0:
                 result = judge_winner(p1, p2)
 
-        # 描画
         if bg_img is not None:
             screen.blit(bg_img, (0, 0))
         else:
