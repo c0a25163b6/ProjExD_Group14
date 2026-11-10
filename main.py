@@ -400,8 +400,7 @@ class Fighter(pg.sprite.Sprite):
         """
         ダメージを受けてのけぞる
         引数 damage：受けるダメージ量
-        引数 from_dir：押し戻される向き（右:+1, 左:-1
-        引数 from_dir (int): 攻撃された方向（吹き飛ぶ向きの基準）
+        引数 from_dir：押し戻される向き（右:+1, 左:-1)
         """
         if self.is_defeated:
             return
@@ -414,7 +413,7 @@ class Fighter(pg.sprite.Sprite):
 
     def trigger_defeat(self, attacker_centerx: int) -> None:
         """
-        重力・タイマー・画面端・のけぞり・K.O.演出などの処理を行う
+        K.O.演出の処理を行う
         引数 attacker_centerx : 相手のX座標
         """
         if self.is_defeated:
@@ -690,7 +689,6 @@ def load_random_bg() -> pg.Surface | None:
     return None
 
 
-
 class MoveTuple(NamedTuple):
     """
     移動や攻撃などの一括管理用NamedTuple
@@ -795,7 +793,7 @@ class CPUFighter(Fighter):
 
     def select_defence(self, enemy: Fighter) -> str:
         """
-        防御を選択するようメソッド
+        防御を選択する用メソッド
         引数 enemy: 相手キャラ
         戻り値 str
         """
@@ -1033,7 +1031,6 @@ def controls(screen: pg.Surface,
         draw_center_text(screen=screen, text=CONTROLS_TITLE, font=font_l, y=HEIGHT // 4)
         player_1 = font_s.render("1P", True, (255, 255, 255))
         player_2 = font_s.render("2P", True, (255, 255, 255))
-        back = font_s.render("ESC: BACK", True, (255, 255, 255))
         screen.blit(player_1, player_1.get_rect(center=(WIDTH // 4, TEXT_TOP - TEXT_SPACE)))
         screen.blit(player_2, player_2.get_rect(center=(WIDTH * 3 // 4, TEXT_TOP - TEXT_SPACE)))
         draw_center_text(screen=screen, text=BACK_SELECT,
