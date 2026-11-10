@@ -603,7 +603,7 @@ def check_hit(attacker: Fighter, defender: Fighter) -> int:
         return 0
     if atk.colliderect(defender.rect):
         defender.take_damage(attacker.current_damage, attacker.facing)
-        apply_hit(attacker, defender, ATTACK_DAMAGE)
+        apply_hit(attacker, defender, attacker.current_damage)
         attacker.has_hit = True
         attacker.combo_count += 1
         attacker.combo_timer = COMBO_RESET_FRAMES
