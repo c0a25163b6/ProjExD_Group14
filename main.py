@@ -113,6 +113,29 @@ MAX_COMBO_COUNT = 10  # 最大コンボ数
 COMBO_RESET_FRAMES = 90  # 最後のヒットからコンボ表示が消えるまでの時間
 COMBO_LINK_FRAMES = 35  # 前のヒットからこのフレーム以内に当てるとコンボ継続
 
+BGM_DIR = "BGM"  # BGMを置くフォルダ
+SE_DIR = "SE"  # 効果音を置くフォルダ
+BGM_VOLUME = 0.3  # BGMの音量（0.0〜1.0）
+SE_VOLUME = 0.7  # 効果音の音量（0.0〜1.0）
+ATTACK_SE = {
+    "punch": "punch",#パンチ
+    "kick": "kick",#キック
+    "upper": "upper",#アッパー
+    "air": "air",#空中攻撃
+    "super": "super",# 必殺技
+     "guard": "guard",# ガード
+}
+GUARD_SE = "guard"  # ガードされたときに鳴らす効果音の名前
+
+P1_SE_KEYS = {
+    pg.K_c: "punch",  # パンチ
+    pg.K_v: "kick",  # キック
+    pg.K_f: "upper",  # アッパーカット
+    pg.K_w: "air",  # ジャンプ攻撃
+    pg.K_r: "guard",  # ガード
+    pg.K_t: "guard",  # ガード
+    pg.K_z: "super",  # 必殺技
+}
 
 @dataclass
 class KeyConfig:
@@ -132,6 +155,27 @@ class KeyConfig:
 P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d, jump=pg.K_w, punch=pg.K_c, kick=pg.K_v, upper=pg.K_f, special=pg.K_z)
 P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT, jump=pg.K_UP, punch=pg.K_COMMA, kick=pg.K_m, upper=pg.K_k, special=pg.K_p)
 
+class BGMManager:
+    """
+    ゲーム内のBGM再生・停止・音量変更を管理するクラス（追加機能）
+    """
+    def __init__(self, bgm_path: str, volume: float = 0.5) -> None:
+        pg.mixer.init()  # ミキサーの初期化
+        self.bgm_path = bgm_path
+        self.volume = volume
+        self.is_playing = False
+
+    def play(self, loops: int = -1) -> None:
+        if os.path.exists(self.bgm_path):
+            pg.mixer.music.load(self.bgm_path)  # 音源ファイルの読み込み
+            pg.mixer.music.set_volume(self.volume)
+            pg.mixer.music.play(loops=loops)  # BGM再生
+            self.is_playing = True
+
+    def stop(self) -> None:
+        if self.is_playing:
+            pg.mixer.music.stop()  # BGM停止
+            self.is_playing = False
 
 def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     """
@@ -164,6 +208,41 @@ def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     img.fill(color)
     pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))
     return img
+
+class SEManager:
+    """
+    効果音（SE）の読み込みと再生を管理するクラス（追加機能）
+    """
+
+    def __init__(self, se_files: dict[str, str], volume: float = SE_VOLUME) -> None:
+        """
+        効果音をまとめて読み込む
+        引数 se_files：{効果音の名前: ファイル名}の辞書
+        引数 volume：音量（0.0〜1.0）
+        """
+        pg.mixer.init()
+        self.sounds: dict[str, pg.mixer.Sound] = {}
+        for name, file_name in se_files.items():
+            path = os.path.join(SE_DIR, file_name)
+            if os.path.exists(path):  # ファイルがなくてもゲームが落ちないようにする
+                snd = pg.mixer.Sound(path)
+                snd.set_volume(volume)
+                self.sounds[name] = snd
+
+    def play(self, name: str) -> None:
+        """
+        名前を指定して効果音を1回鳴らす
+        引数 name：効果音の名前
+        """
+        snd = self.sounds.get(name)
+        if snd is not None:
+            snd.play()
+    def stop_all(self) -> None:
+        """
+        鳴っている効果音をすべて止める（BGMは止まらない）
+        """
+        pg.mixer.stop()
+
 
 # 試験用に入れてます
 class SuperAttack(pg.sprite.Sprite):
@@ -602,12 +681,9 @@ def check_hit(attacker: Fighter, defender: Fighter) -> int:
     if atk is None or attacker.has_hit:
         return 0
     if atk.colliderect(defender.rect):
-        defender.take_damage(attacker.current_damage, attacker.facing)
         apply_hit(attacker, defender, attacker.current_damage)
         attacker.has_hit = True
-        attacker.combo_count += 1
-        attacker.combo_timer = COMBO_RESET_FRAMES
-        attacker.super_gauge = min(MAX_SUPER_GAGE, attacker.super_gauge + SUPER_GAGE_UP * 5)
+        attacker.super_gauge = min(MAX_SUPER_GAGE, attacker.super_gauge + SUPER_GAGE_UP)
 
         if attacker.combo_count < 5:
             gauge_up = SUPER_GAGE_UP
@@ -672,19 +748,6 @@ def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font
     bar_w, bar_h = 380, 22
     y = 25
     hp_w = bar_w * fighter.hp // MAX_HP
-
-    # 必殺技ゲージ（必殺技）
-    gauge_y = 78
-    gauge_h = 12
-    pg.draw.rect(screen, (50, 50, 50), (x, gauge_y, bar_w, gauge_h))
-    gauge_w = bar_w * fighter.super_gauge // MAX_SUPER_GAGE
-    pg.draw.rect(screen, (0, 150, 255), (x, gauge_y, gauge_w, gauge_h))
-    pg.draw.rect(screen, (255, 255, 255), (x, gauge_y, bar_w, gauge_h), 1)
-
-    # コンボ数（2回以上つながったときだけ表示）（必殺技）
-    if fighter.combo_count >= 2 and fighter.combo_timer > 0:
-        combo_text = font.render(f"{fighter.combo_count} COMBO", True, (255, 230, 50))
-        screen.blit(combo_text, (x, 98))
 
     pg.draw.rect(screen, (20, 20, 20), (x - 2, y - 2, bar_w + 4, bar_h + 4), border_radius=4)
     pg.draw.rect(screen, (70, 70, 70), (x, y, bar_w, bar_h))
@@ -1207,10 +1270,25 @@ def main() -> None:
     p1, p2 = create_fighters(menu)
     bg_img = load_random_bg()
 
+
+    # BGMマネージャーの生成と再生
+    bgm = BGMManager(os.path.join(BGM_DIR, "BGM1.wav"), volume=BGM_VOLUME)
+    bgm.play()
+
+    se = SEManager({
+        "punch": "punch.mp3",
+        "kick": "kick.mp3",
+        "upper": "upper.mp3",
+        "air": "air.mp3",
+        "super": "super.mp3",
+        "guard": "guard.mp3",
+    })
+
     tmr = 0
     result = ""
     hit_stop_frames = 0
     KO_delay = 0
+
 
     while True:
         for event in pg.event.get():
@@ -1228,8 +1306,10 @@ def main() -> None:
                 bg_img = load_random_bg()
                 tmr = 0
                 result = ""
+                bgm.play()  # BGMを再開する
                 hit_stop_frames = 0
                 KO_delay = 0
+                continue  # Rはガードキーでもあるので、この回はSEを鳴らさない
 
         if not result:
             if hit_stop_frames > 0:
@@ -1289,11 +1369,15 @@ def main() -> None:
                     KO_delay += 1
                     if KO_delay > 90:
                         result = judge_winner(p1, p2)
+                        bgm.stop()  # 決着したらBGMを止める
+                        se.stop_all()  # 鳴っている効果音も止める
 
                 tmr += 1
                 remain = max(0, ROUND_TIME - tmr // FPS)
                 if remain <= 0 and not p1.is_defeated and not p2.is_defeated:
                     result = judge_winner(p1, p2)
+                    bgm.stop()  # 決着したらBGMを止める
+                    se.stop_all()  # 鳴っている効果音も止める
 
         # 画面描画の実行
         if bg_img is not None:
