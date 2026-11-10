@@ -715,26 +715,26 @@ class DifficultyTuple(NamedTuple):
 
 
 DIFFICULTY = {
-    "weak": DifficultyTuple(think_interval=45,
-                            attack_rate=0.3,
-                            avoid_rate=0.15,
+    "weak": DifficultyTuple(think_interval=25,
+                            attack_rate=0.5,
+                            avoid_rate=0.45,
                             think_jitter=15,
                             max_combo=3,
-                            chase_rate=0.3,
+                            chase_rate=0.5,
                             whiff_back_avoid=0.4),
-    "normal": DifficultyTuple(think_interval=30,
-                              attack_rate=0.5,
-                              avoid_rate=0.3,
-                              think_jitter=6,
-                              max_combo=6,
-                              chase_rate=0.5,
-                              whiff_back_avoid=0.75),
-    "strong": DifficultyTuple(think_interval=15,
+    "normal": DifficultyTuple(think_interval=15,
                               attack_rate=0.75,
                               avoid_rate=0.75,
+                              think_jitter=6,
+                              max_combo=6,
+                              chase_rate=0.75,
+                              whiff_back_avoid=0.75),
+    "strong": DifficultyTuple(think_interval=5,
+                              attack_rate=0.9,
+                              avoid_rate=0.9,
                               think_jitter=2,
                               max_combo=10,
-                              chase_rate=0.8,
+                              chase_rate=0.85,
                               whiff_back_avoid=0.9),
 }
 
@@ -978,7 +978,7 @@ def cpu_mode_select(screen: pg.Surface,
     引数 clock : タイマー用
     戻り値 : str(weak,normal,strong), Escで戻ったらNone
     """
-    bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
+    bg_img = pg.image.load("fig/bb/bg.png").convert() if os.path.exists("fig/bb/bg.png") else None
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -1015,7 +1015,7 @@ def controls(screen: pg.Surface,
     引数 clock : タイマー用
     戻り値 : Escで戻ったらNone
     """
-    bg_img = pg.image.load("fig/bg.png").convert() if os.path.exists("fig/bg.png") else None
+    bg_img = pg.image.load("fig/bb/bg.png").convert() if os.path.exists("fig/bb/bg.png") else None
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:
