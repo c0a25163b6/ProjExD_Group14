@@ -40,6 +40,7 @@ ATTACK_SE = {
     "upper": "upper",#アッパー    
     "air": "air",#空中攻撃
     "super": "super",# 必殺技
+     "guard": "guard",# ガード 
 }
 GUARD_SE = "guard"  # ガードされたときに鳴らす効果音の名前
 
@@ -79,14 +80,14 @@ class BGMManager:
 
     def play(self, loops: int = -1) -> None:
         if os.path.exists(self.bgm_path):
-            pg.mixer.music.load(self.bgm_path)  # 音源ファイルの読み込み[cite: 5]
+            pg.mixer.music.load(self.bgm_path)  # 音源ファイルの読み込み
             pg.mixer.music.set_volume(self.volume)
-            pg.mixer.music.play(loops=loops)  # BGM再生[cite: 5]
+            pg.mixer.music.play(loops=loops)  # BGM再生
             self.is_playing = True
 
     def stop(self) -> None:
         if self.is_playing:
-            pg.mixer.music.stop()  # BGM停止[cite: 5]
+            pg.mixer.music.stop()  # BGM停止
             self.is_playing = False
 
 def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
@@ -348,13 +349,12 @@ def main() -> None:
 
 
     # BGMマネージャーの生成と再生
-    # ※ファイルがBGMフォルダ内にある場合は "BGM/BGM1.wav" などのパスに変更してください
     bgm = BGMManager(os.path.join(BGM_DIR, "BGM1.wav"), volume=BGM_VOLUME)
     bgm.play()
 
     se = SEManager({
-        "punch": "punch_1.mp3",
-        "kick": "kick_1.mp3",
+        "punch": "punch.mp3",
+        "kick": "kick.mp3",
         "upper": "upper.mp3",
         "air": "air.mp3",
         "super": "super.mp3",
