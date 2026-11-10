@@ -18,7 +18,7 @@ ROUND_TIME = 60  # 1ラウンドの制限時間（秒）
 
 FIGHTER_W = 100  # キャラの幅
 FIGHTER_H = 140  # キャラの高さ
-MAX_HP = 100  # 最大体力
+MAX_HP = 400  # 最大体力
 WALK_SPEED = 5  # 歩く速さ
 JUMP_POWER = 20  # ジャンプの初速
 
@@ -118,12 +118,12 @@ SE_DIR = "SE"  # 効果音を置くフォルダ
 BGM_VOLUME = 0.3  # BGMの音量（0.0〜1.0）
 SE_VOLUME = 0.7  # 効果音の音量（0.0〜1.0）
 ATTACK_SE = {
-    "punch": "punch",#パンチ
-    "kick": "kick",#キック
-    "upper": "upper",#アッパー
-    "air": "air",#空中攻撃
-    "super": "super",# 必殺技
-     "guard": "guard",# ガード
+    "punch": "punch",  # パンチ
+    "kick": "kick",  # キック
+    "upper": "upper",  # アッパー
+    "air": "air",  # 空中攻撃
+    "super": "super",  # 必殺技
+    "guard": "guard",  # ガード
 }
 GUARD_SE = "guard"  # ガードされたときに鳴らす効果音の名前
 
@@ -136,6 +136,7 @@ P1_SE_KEYS = {
     pg.K_t: "guard",  # ガード
     pg.K_z: "super",  # 必殺技
 }
+
 
 @dataclass
 class KeyConfig:
@@ -152,20 +153,33 @@ class KeyConfig:
 
 
 # P1: WASD(移動), C(パンチ), V(キック), F(アッパー)
-P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d, jump=pg.K_w, punch=pg.K_c, kick=pg.K_v, upper=pg.K_f, special=pg.K_z)
-P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT, jump=pg.K_UP, punch=pg.K_COMMA, kick=pg.K_m, upper=pg.K_k, special=pg.K_p)
+P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d,
+                    jump=pg.K_w, punch=pg.K_c,
+                    kick=pg.K_v, upper=pg.K_f,
+                    special=pg.K_z)
+P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT,
+                    jump=pg.K_UP, punch=pg.K_COMMA,
+                    kick=pg.K_m, upper=pg.K_k, special=pg.K_p)
+
 
 class BGMManager:
     """
     ゲーム内のBGM再生・停止・音量変更を管理するクラス（追加機能）
     """
+
     def __init__(self, bgm_path: str, volume: float = 0.5) -> None:
+        """
+        BGMのミキサーを初期化する
+        """
         pg.mixer.init()  # ミキサーの初期化
         self.bgm_path = bgm_path
         self.volume = volume
         self.is_playing = False
 
     def play(self, loops: int = -1) -> None:
+        """
+        フォルダにある音源を読み込みBGMを再生する
+        """
         if os.path.exists(self.bgm_path):
             pg.mixer.music.load(self.bgm_path)  # 音源ファイルの読み込み
             pg.mixer.music.set_volume(self.volume)
@@ -173,9 +187,13 @@ class BGMManager:
             self.is_playing = True
 
     def stop(self) -> None:
+        """
+        BGMが停止する
+        """
         if self.is_playing:
             pg.mixer.music.stop()  # BGM停止
             self.is_playing = False
+
 
 def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     """
@@ -209,6 +227,7 @@ def load_fighter_image(path: str, color: tuple[int, int, int]) -> pg.Surface:
     pg.draw.rect(img, (255, 255, 255), (FIGHTER_W - 25, 20, 12, 12))
     return img
 
+
 class SEManager:
     """
     効果音（SE）の読み込みと再生を管理するクラス（追加機能）
@@ -237,6 +256,7 @@ class SEManager:
         snd = self.sounds.get(name)
         if snd is not None:
             snd.play()
+
     def stop_all(self) -> None:
         """
         鳴っている効果音をすべて止める（BGMは止まらない）
@@ -365,7 +385,8 @@ class Fighter(pg.sprite.Sprite):
         self.anim_damage = load_fighter_image(damage_path, color)
 
         lose_path = os.path.join(base_dir, "lose.png")
-        self.anim_lose = load_fighter_image(lose_path, color) if os.path.exists(lose_path) else self.anim_damage
+        self.anim_lose = (load_fighter_image(lose_path, color)
+                          if os.path.exists(lose_path) else self.anim_damage)
 
         walk_dir = os.path.join(base_dir, "walk")
         if os.path.exists(walk_dir):
@@ -387,10 +408,10 @@ class Fighter(pg.sprite.Sprite):
         self.vy = 0
         self.vx = 0
         self.hp = MAX_HP
-        self.attack_timer = 0 # 攻撃判定が残っているフレーム数
-        self.cooldown = 0 # 次の攻撃までの待ちフレーム数
-        self.hitstun = 0 # のけぞりの残りフレーム数
-        self.has_hit = False # 今回の攻撃がすでに当たったか
+        self.attack_timer = 0  # 攻撃判定が残っているフレーム数
+        self.cooldown = 0  # 次の攻撃までの待ちフレーム数
+        self.hitstun = 0  # のけぞりの残りフレーム数
+        self.has_hit = False  # 今回の攻撃がすでに当たったか
         self.super_gauge = 0  # 必殺技ゲージ
         self.combo_timer = 0  # コンボが途切れるまでの時間
         self.combo_count = 0  # 連続で攻撃を当てた回数
@@ -733,7 +754,13 @@ def push_apart(f1: Fighter, f2: Fighter) -> None:
     f2.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
 
 
-def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font, font_combo: pg.font.Font, is_p2: bool = False, tmr: int = 0) -> None:
+def draw_hp_bar(screen: pg.Surface,
+                fighter: Fighter,
+                x: int,
+                font: pg.font.Font,
+                font_combo: pg.font.Font,
+                is_p2: bool = False,
+                tmr: int = 0) -> None:
     """
     体力バー、必殺技ゲージ、プレイヤー名、コンボ数などを画面上に描画する
 
@@ -802,7 +829,11 @@ def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font
             screen.blit(combo_text, c_rect)
 
 
-def draw_center_text(screen: pg.Surface, text: str, font: pg.font.Font, y: int, color=(255, 255, 255)) -> None:
+def draw_center_text(screen: pg.Surface,
+                     text: str,
+                     font: pg.font.Font,
+                     y: int,
+                     color=(255, 255, 255)) -> None:
     """
     画面中央にテキストを描画する
 
@@ -1270,7 +1301,6 @@ def main() -> None:
     p1, p2 = create_fighters(menu)
     bg_img = load_random_bg()
 
-
     # BGMマネージャーの生成と再生
     bgm = BGMManager(os.path.join(BGM_DIR, "BGM1.wav"), volume=BGM_VOLUME)
     bgm.play()
@@ -1288,7 +1318,6 @@ def main() -> None:
     result = ""
     hit_stop_frames = 0
     KO_delay = 0
-
 
     while True:
         for event in pg.event.get():
@@ -1324,12 +1353,17 @@ def main() -> None:
                     else:
                         p2.handle_input(key_lst)
 
-                    if key_lst[p1.keys.special] and p1.super_gauge >= SUPER_GAGE_REQUIRE and p1.special_pose_timer == 0:
+                    if (key_lst[p1.keys.special]
+                            and p1.super_gauge >= SUPER_GAGE_REQUIRE
+                            and p1.special_pose_timer == 0):
                         super_attacks.add(SuperAttack(p1))
                         p1.super_gauge = 0
                         p1.special_pose_timer = 30
 
-                    if key_lst[p2.keys.special] and p2.super_gauge >= SUPER_GAGE_REQUIRE and p2.special_pose_timer == 0 and not isinstance(p2, CPUFighter):
+                    if (key_lst[p2.keys.special]
+                            and p2.super_gauge >= SUPER_GAGE_REQUIRE
+                            and p2.special_pose_timer == 0
+                            and not isinstance(p2, CPUFighter)):
                         super_attacks.add(SuperAttack(p2))
                         p2.super_gauge = 0
                         p2.special_pose_timer = 30
