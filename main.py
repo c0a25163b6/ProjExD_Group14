@@ -38,6 +38,12 @@ AIR_FRAMES, AIR_COOLDOWN = 12, 18
 HITSTUN_FRAMES = 12  # のけぞり時間（通常連打では繋がらない長さ）
 KNOCKBACK = 20  # ノックバック距離（大きく飛ばして目押しなしの連打ハメを防止）
 MAX_COMBO_LIMIT = 10  # 最大コンボ上限（10ヒットで相手は強制復帰・ダウン立ち上がり）
+BARRIER_W = 80  # 防御判定の幅
+BARRIER_H = 40  # 防御判定の高さ
+BARRIER_FRAMES = 15  # 防御が出ている時間（フレーム）
+BARRIER_COOLDOWN = 5  # 次に防御できるまでの時間（フレーム）
+BARRIER_KNOCKBACK = 6  # バリア状態で攻撃を受けたときに押し戻される距離
+BARRIER_DAMAGE_ULTIMATE_ATTACK = 2  # 必殺技を防御したときのダメージ
 ADJUSTING_CPU_ATTACK_POINT = -10  # cpuが攻撃するときの攻撃計算の補助判定
 AVOID_CHOICE_STANDARD_RATE = 0.33  # cpuが回避するときの逃げの選択基準の境目
 AVOID_BACK_WALL_CHECK = 30  # CPU回避時の壁際判定の定数
@@ -57,7 +63,7 @@ CONTROLS_1P = {
     "kick": "KICK: V",
     "upper": "UPPER: F",
     "barrier_up": "BARRIER_UP: R",
-    "barrier_md": "BARRIER_MD: S",
+    "barrier_md": "BARRIER_MD: T",
     "special": "SPECIAL: Z"
 }
 CONTROLS_2P = {
@@ -66,9 +72,9 @@ CONTROLS_2P = {
     "punch": "PUNCH: ,",
     "kick": "KICK: M",
     "upper": "UPPER: K",
-    "barrier_up": "BARRIER_UP: /",
-    "barrier_md": "BARRIER_MD: DOWN",
-    "special": "SPECIAL: P"
+    "barrier_up": "BARRIER_UP: O",
+    "barrier_md": "BARRIER_MD: P",
+    "special": "SPECIAL: J"
 }
 TITLE = {
     "2p": "1 : 2P BATTLE",
@@ -150,16 +156,21 @@ class KeyConfig:
     kick: int   # キック用キー
     upper: int  # アッパー用キー
     special: int  # 必殺技キー
+    barrier_up: int  # 上防御
+    barrier_md: int  # 下防御
 
 
 # P1: WASD(移動), C(パンチ), V(キック), F(アッパー)
 P1_KEYS = KeyConfig(left=pg.K_a, right=pg.K_d,
                     jump=pg.K_w, punch=pg.K_c,
                     kick=pg.K_v, upper=pg.K_f,
-                    special=pg.K_z)
+                    special=pg.K_z, barrier_up=pg.K_r,
+                    barrier_md=pg.K_t)
 P2_KEYS = KeyConfig(left=pg.K_LEFT, right=pg.K_RIGHT,
                     jump=pg.K_UP, punch=pg.K_COMMA,
-                    kick=pg.K_m, upper=pg.K_k, special=pg.K_p)
+                    kick=pg.K_m, upper=pg.K_k,
+                    special=pg.K_j, barrier_up=pg.K_o,
+                    barrier_md=pg.K_p)
 
 
 class BGMManager:
@@ -379,6 +390,12 @@ class Fighter(pg.sprite.Sprite):
         special_path = os.path.join(base_dir, "ex.png")
         self.anim_special = load_fighter_image(special_path, color)
 
+        up_gard = os.path.join(base_dir, "ugrd.png")
+        self.anim_ugrd = load_fighter_image(up_gard, color)
+
+        md_gard = os.path.join(base_dir, "dgrd.png")
+        self.anim_dgrd = load_fighter_image(md_gard, color)
+
         damage_path = os.path.join(base_dir, "damage.png")
         if not os.path.exists(damage_path):
             damage_path = os.path.join(base_dir, "hit.png")
@@ -431,6 +448,10 @@ class Fighter(pg.sprite.Sprite):
         self.special_pose_timer = 0
         self.super_gauge = 0
         self.combo_timer = 0
+
+        self.barrier_timer = 0  # 防御判定が残っているフレーム数
+        self.barrier_cooldown = 0  # 次の防御までの待ちフレーム数
+        self.barrier_type = ""  # "up"または"md"
 
         self.update_image_facing()
 
@@ -487,7 +508,8 @@ class Fighter(pg.sprite.Sprite):
         kick_trig = key_lst[self.keys.kick] and not self.prev_kick
         upper_trig = key_lst[self.keys.upper] and not self.prev_upper
 
-        can_act = (self.cooldown == 0) or self.can_cancel
+        can_act = ((self.cooldown == 0) or self.can_cancel
+                   and self.barrier_timer == 0)
 
         if can_act:
             if not self.is_on_ground() and (punch_trig or kick_trig):
@@ -502,6 +524,17 @@ class Fighter(pg.sprite.Sprite):
         self.prev_punch = bool(key_lst[self.keys.punch])
         self.prev_kick = bool(key_lst[self.keys.kick])
         self.prev_upper = bool(key_lst[self.keys.upper])
+        # 攻撃中は防御を出せないように self.attack_timer == 0を条件に設定
+        if key_lst[self.keys.barrier_up] and self.barrier_cooldown == 0 and self.attack_timer == 0:
+            self.barrier_timer = BARRIER_FRAMES
+            self.barrier_cooldown = BARRIER_COOLDOWN
+            self.barrier_type = "up"
+        elif (key_lst[self.keys.barrier_md]
+                and self.barrier_cooldown == 0
+                and self.attack_timer == 0):
+            self.barrier_timer = BARRIER_FRAMES
+            self.barrier_cooldown = BARRIER_COOLDOWN
+            self.barrier_type = "md"
 
     def face_to(self, other: "Fighter") -> None:
         """
@@ -544,8 +577,37 @@ class Fighter(pg.sprite.Sprite):
                 atk.left = self.rect.right
             else:
                 atk.right = self.rect.left
-
         return atk
+
+    # 防御判定の矩形を取得するメソッド
+    def get_barrier_rect(self) -> pg.Rect | None:
+        """
+        防御判定の矩形を返す（防御中でなければNone）
+        """
+        if self.barrier_timer <= 0:
+            return None
+        bar = pg.Rect(0, 0, BARRIER_W, BARRIER_H)
+
+        # 上段は少し高め、中段は中央に判定を配置する
+        if self.barrier_type == "up":
+            bar.centery = self.rect.top + FIGHTER_H // 4
+        else:
+            bar.centery = self.rect.centery
+
+        if self.facing == 1:
+            bar.left = self.rect.right - FIGHTER_W
+        else:
+            bar.right = self.rect.left + FIGHTER_W
+        return bar
+
+    # ガード成功時の処理メソッド
+    def block_attack(self, from_dir: int) -> None:
+        """
+        防御成功時にノックバックする処理
+        引数 from_dir：押し戻される向き（右:+1, 左:-1）
+        """
+        self.rect.x += BARRIER_KNOCKBACK * from_dir
+        self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
 
     def take_damage(self, damage: int, from_dir: int) -> None:
         """
@@ -561,6 +623,7 @@ class Fighter(pg.sprite.Sprite):
         self.hp = max(0, self.hp - damage)
         self.hitstun = HITSTUN_FRAMES
         self.attack_timer = 0
+        self.barrier_timer = 0  # ダメージを受けたら防御も潰される
         self.special_pose_timer = 0
         self.rect.x += KNOCKBACK * from_dir
         self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
@@ -623,6 +686,9 @@ class Fighter(pg.sprite.Sprite):
         elif not self.is_on_ground():
             self.current_anim = self.anim_jump
             self.update_image_facing()
+        elif self.barrier_timer > 0:
+            self.current_anim = self.anim_ugrd if self.barrier_type == "up" else self.anim_dgrd
+            self.update_image_facing()
         else:
             if self.is_moving:
                 self.walk_anim_timer += 1
@@ -641,6 +707,8 @@ class Fighter(pg.sprite.Sprite):
         self.cooldown = max(0, self.cooldown - 1)
         self.hitstun = max(0, self.hitstun - 1)
         self.combo_timer = max(0, self.combo_timer - 1)
+        self.barrier_timer = max(0, self.barrier_timer - 1)
+        self.barrier_cooldown = max(0, self.barrier_cooldown - 1)
 
         # 最後のヒットから90フレーム経過したらコンボをリセットする
         if self.combo_timer == 0:
@@ -656,6 +724,10 @@ class Fighter(pg.sprite.Sprite):
         atk = self.get_attack_rect()
         if atk is not None:
             pg.draw.rect(screen, (255, 220, 0), atk, 3)
+        bar = self.get_barrier_rect()
+        if bar is not None:
+            color = (0, 200, 255) if self.barrier_type == "up" else (0, 255, 100)
+            pg.draw.rect(screen, color, bar, 3)  # 防御判定（上段:水色、中段:緑色)
 
 
 def apply_hit(
@@ -700,6 +772,11 @@ def check_hit(attacker: Fighter, defender: Fighter) -> int:
     atk = attacker.get_attack_rect()
 
     if atk is None or attacker.has_hit:
+        return 0
+    bar = defender.get_barrier_rect()
+    if bar is not None and atk.colliderect(bar):
+        defender.block_attack(attacker.facing)
+        attacker.has_hit = True
         return 0
     if atk.colliderect(defender.rect):
         apply_hit(attacker, defender, attacker.current_damage)
