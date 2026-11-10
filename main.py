@@ -99,6 +99,20 @@ SUPER_DAMAGE = 20
 SUPER_SPEED = 25
 COMBO_RESET_FRAMES = 90
 
+# 必殺技の設定(必殺技)
+MAX_SUPER_GAGE = 100  # 最大ゲージ
+SUPER_GAGE_UP = 1  # 通常攻撃が当たったときの増加量
+SUPER_GAGE_REQUIRE = 15  # 必殺技発動に必要なゲージ量
+SUPER_GAGE_ATTACK_DAMAGE = 20  # 必殺技のダメージ
+SUPER_GAGE_ATTACK_FRAMES = 100  # 必殺技が出ている時間（フレーム）
+SUPER_SPEED = 30  # 必殺技の移動速度(ピクセル数/フレーム)
+DAMAGE_GAUGE_UP = 5  # ダメージを受けたときのゲージ増加量
+COMBO_DAMAGE_RATE = 0.1  # コンボごとのダメージ減少率
+MIN_DAMAGE_RATE = 0.5  # 基本ダメージの50％を下限にする
+MAX_COMBO_COUNT = 10  # 最大コンボ数
+COMBO_RESET_FRAMES = 90  # 最後のヒットからコンボ表示が消えるまでの時間
+COMBO_LINK_FRAMES = 35  # 前のヒットからこのフレーム以内に当てるとコンボ継続
+
 
 @dataclass
 class KeyConfig:
@@ -200,6 +214,40 @@ class SuperAttack(pg.sprite.Sprite):
             self.kill()
 
 
+class SuperAttack(pg.sprite.Sprite):
+    """
+    必殺技に関するクラス
+    """
+    def __init__(self, fighter: "Fighter") -> None:
+        """
+        必殺技を生成する
+        引数 fighter:必殺技を出すキャラ
+        """
+        super().__init__()
+
+        self.image = pg.Surface((60, 30), pg.SRCALPHA)  # 幅60、高さ30の画像を作る。
+        self.image.fill((255, 0, 0, 128))  # 半透明の赤色で塗りつぶす
+
+        self.rect = self.image.get_rect()  # 画像と同じ大きさの当たり判定を作る。
+        self.rect.centery = fighter.rect.centery  # キャラクターの中心の高さに合わせる。
+
+        # キャラクターの向きに合わせて出現位置を決める。
+        if fighter.facing == 1:  # 右を向いている時
+            self.rect.left = fighter.rect.right  # キャラクターの右端に合わせる。
+        else:
+            self.rect.right = fighter.rect.left  # 左を向いているときはキャラクターの左端に合わせる。
+
+        self.speed = SUPER_SPEED * fighter.facing  # キャラクターの向きに合わせて移動速度を決める。
+        self.damage = SUPER_GAGE_ATTACK_DAMAGE  # 必殺技のダメージ量を設定する。
+        self.owner = fighter  # 必殺技を出したキャラクターを記録する。(必殺技が誰のものか判定するため)
+
+    def update(self) -> None:
+        """必殺技を移動させ、画面外に出たら削除する。"""
+        self.rect.x += self.speed  # 必殺技を移動させる
+        if self.rect.right < 0 or self.rect.left > WIDTH:  # 画面外に出たら消す
+            self.kill()  # 必殺技を消す
+
+
 class Fighter(pg.sprite.Sprite):
     """格闘キャラクターの挙動やアニメーションを管理するクラス"""
 
@@ -264,6 +312,9 @@ class Fighter(pg.sprite.Sprite):
         self.cooldown = 0 # 次の攻撃までの待ちフレーム数
         self.hitstun = 0 # のけぞりの残りフレーム数
         self.has_hit = False # 今回の攻撃がすでに当たったか
+        self.super_gauge = 0  # 必殺技ゲージ
+        self.combo_timer = 0  # コンボが途切れるまでの時間
+        self.combo_count = 0  # 連続で攻撃を当てた回数
 
         self.attack_type: str | None = None
         self.current_damage = 0
@@ -398,10 +449,13 @@ class Fighter(pg.sprite.Sprite):
 
     def take_damage(self, damage: int, from_dir: int) -> None:
         """
-        ダメージを受けてのけぞる
+        ダメージを受けてのけぞる。
         引数 damage：受けるダメージ量
         引数 from_dir：押し戻される向き（右:+1, 左:-1)
         """
+        # ダメージを受けたら、自分が続けていたコンボをリセットする
+        self.combo_count = 0
+        self.combo_timer = 0
         if self.is_defeated:
             return
         self.hp = max(0, self.hp - damage)
@@ -410,6 +464,12 @@ class Fighter(pg.sprite.Sprite):
         self.special_pose_timer = 0
         self.rect.x += KNOCKBACK * from_dir
         self.rect.clamp_ip(pg.Rect(0, 0, WIDTH, HEIGHT))
+
+        # ダメージを受けたら必殺技ゲージを増やす
+        self.super_gauge = min(
+            MAX_SUPER_GAGE,
+            self.super_gauge + DAMAGE_GAUGE_UP
+        )
 
     def trigger_defeat(self, attacker_centerx: int) -> None:
         """
@@ -481,6 +541,8 @@ class Fighter(pg.sprite.Sprite):
         self.cooldown = max(0, self.cooldown - 1)
         self.hitstun = max(0, self.hitstun - 1)
         self.combo_timer = max(0, self.combo_timer - 1)
+
+        # 最後のヒットから90フレーム経過したらコンボをリセットする
         if self.combo_timer == 0:
             self.combo_count = 0
 
@@ -496,6 +558,35 @@ class Fighter(pg.sprite.Sprite):
             pg.draw.rect(screen, (255, 220, 0), atk, 3)
 
 
+def apply_hit(
+        attacker: Fighter,
+        defender: Fighter,
+        base_damage: int,
+        hitstun_frames: int = HITSTUN_FRAMES,
+) -> None:
+    """攻撃命中時のコンボ数とダメージを共通処理する。"""
+
+    frames_since_hit = COMBO_RESET_FRAMES - attacker.combo_timer
+    if attacker.combo_timer > 0 and frames_since_hit <= COMBO_LINK_FRAMES:
+        # 前回のヒットから35フレーム以内に当たったらコンボ継続
+        attacker.combo_count = min(MAX_COMBO_COUNT, attacker.combo_count + 1)
+    else:
+        # 前回のヒットから35フレームを超えたら新しいコンボにする
+        attacker.combo_count = 1
+
+    attacker.combo_timer = COMBO_RESET_FRAMES
+
+    damage_rate = max(
+        MIN_DAMAGE_RATE,
+        1 - (attacker.combo_count - 1) * COMBO_DAMAGE_RATE
+    )
+    damage = max(1, int(base_damage * damage_rate))
+    defender.take_damage(damage, attacker.facing)
+
+    # take_damage 側で付与されていなくても、ここで必ずのけぞらせる
+    defender.hitstun = max(defender.hitstun, hitstun_frames)
+
+
 def check_hit(attacker: Fighter, defender: Fighter) -> int:
     """
     攻撃判定と被弾処理。10コンボ到達時は相手を強制復帰させる
@@ -507,15 +598,29 @@ def check_hit(attacker: Fighter, defender: Fighter) -> int:
     if defender.is_defeated:
         return 0
     atk = attacker.get_attack_rect()
+
     if atk is None or attacker.has_hit:
         return 0
     if atk.colliderect(defender.rect):
         defender.take_damage(attacker.current_damage, attacker.facing)
+        apply_hit(attacker, defender, ATTACK_DAMAGE)
         attacker.has_hit = True
         attacker.combo_count += 1
         attacker.combo_timer = COMBO_RESET_FRAMES
         attacker.super_gauge = min(MAX_SUPER_GAGE, attacker.super_gauge + SUPER_GAGE_UP * 5)
 
+        if attacker.combo_count < 5:
+            gauge_up = SUPER_GAGE_UP
+        elif attacker.combo_count < MAX_COMBO_COUNT:
+            gauge_up = SUPER_GAGE_UP * 2
+        else:
+            gauge_up = SUPER_GAGE_UP * 3
+
+        # 攻撃が当たったら必殺技ゲージを増やす
+        attacker.super_gauge = min(
+            MAX_SUPER_GAGE,
+            attacker.super_gauge + gauge_up
+        )
         # 10ヒット制限：10ヒットに達したら強制復帰（相手ののけぞり解除・コンボ終了）
         if attacker.combo_count >= MAX_COMBO_LIMIT:
             defender.hitstun = 0
@@ -567,6 +672,19 @@ def draw_hp_bar(screen: pg.Surface, fighter: Fighter, x: int, font: pg.font.Font
     bar_w, bar_h = 380, 22
     y = 25
     hp_w = bar_w * fighter.hp // MAX_HP
+
+    # 必殺技ゲージ（必殺技）
+    gauge_y = 78
+    gauge_h = 12
+    pg.draw.rect(screen, (50, 50, 50), (x, gauge_y, bar_w, gauge_h))
+    gauge_w = bar_w * fighter.super_gauge // MAX_SUPER_GAGE
+    pg.draw.rect(screen, (0, 150, 255), (x, gauge_y, gauge_w, gauge_h))
+    pg.draw.rect(screen, (255, 255, 255), (x, gauge_y, bar_w, gauge_h), 1)
+
+    # コンボ数（2回以上つながったときだけ表示）（必殺技）
+    if fighter.combo_count >= 2 and fighter.combo_timer > 0:
+        combo_text = font.render(f"{fighter.combo_count} COMBO", True, (255, 230, 50))
+        screen.blit(combo_text, (x, 98))
 
     pg.draw.rect(screen, (20, 20, 20), (x - 2, y - 2, bar_w + 4, bar_h + 4), border_radius=4)
     pg.draw.rect(screen, (70, 70, 70), (x, y, bar_w, bar_h))
