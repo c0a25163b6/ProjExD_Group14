@@ -109,7 +109,7 @@ COMBO_RESET_FRAMES = 90
 MAX_SUPER_GAGE = 100  # 最大ゲージ
 SUPER_GAGE_UP = 1  # 通常攻撃が当たったときの増加量
 SUPER_GAGE_REQUIRE = 15  # 必殺技発動に必要なゲージ量
-SUPER_GAGE_ATTACK_DAMAGE = 20  # 必殺技のダメージ
+SUPER_GAGE_ATTACK_DAMAGE = 100  # 必殺技のダメージ
 SUPER_GAGE_ATTACK_FRAMES = 100  # 必殺技が出ている時間（フレーム）
 SUPER_SPEED = 30  # 必殺技の移動速度(ピクセル数/フレーム)
 DAMAGE_GAUGE_UP = 5  # ダメージを受けたときのゲージ増加量
@@ -322,40 +322,6 @@ class SuperAttack(pg.sprite.Sprite):
         self.rect.x += self.speed
         if self.rect.right < 0 or self.rect.left > WIDTH:
             self.kill()
-
-
-class SuperAttack(pg.sprite.Sprite):
-    """
-    必殺技に関するクラス
-    """
-    def __init__(self, fighter: "Fighter") -> None:
-        """
-        必殺技を生成する
-        引数 fighter:必殺技を出すキャラ
-        """
-        super().__init__()
-
-        self.image = pg.Surface((60, 30), pg.SRCALPHA)  # 幅60、高さ30の画像を作る。
-        self.image.fill((255, 0, 0, 128))  # 半透明の赤色で塗りつぶす
-
-        self.rect = self.image.get_rect()  # 画像と同じ大きさの当たり判定を作る。
-        self.rect.centery = fighter.rect.centery  # キャラクターの中心の高さに合わせる。
-
-        # キャラクターの向きに合わせて出現位置を決める。
-        if fighter.facing == 1:  # 右を向いている時
-            self.rect.left = fighter.rect.right  # キャラクターの右端に合わせる。
-        else:
-            self.rect.right = fighter.rect.left  # 左を向いているときはキャラクターの左端に合わせる。
-
-        self.speed = SUPER_SPEED * fighter.facing  # キャラクターの向きに合わせて移動速度を決める。
-        self.damage = SUPER_GAGE_ATTACK_DAMAGE  # 必殺技のダメージ量を設定する。
-        self.owner = fighter  # 必殺技を出したキャラクターを記録する。(必殺技が誰のものか判定するため)
-
-    def update(self) -> None:
-        """必殺技を移動させ、画面外に出たら削除する。"""
-        self.rect.x += self.speed  # 必殺技を移動させる
-        if self.rect.right < 0 or self.rect.left > WIDTH:  # 画面外に出たら消す
-            self.kill()  # 必殺技を消す
 
 
 class Fighter(pg.sprite.Sprite):
