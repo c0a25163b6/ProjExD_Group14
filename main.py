@@ -508,7 +508,7 @@ class Fighter(pg.sprite.Sprite):
         kick_trig = key_lst[self.keys.kick] and not self.prev_kick
         upper_trig = key_lst[self.keys.upper] and not self.prev_upper
 
-        can_act = ((self.cooldown == 0) or self.can_cancel
+        can_act = (((self.cooldown == 0) or self.can_cancel)
                    and self.barrier_timer == 0)
 
         if can_act:
@@ -721,13 +721,6 @@ class Fighter(pg.sprite.Sprite):
         screen (pg.Surface): 描画
         """
         screen.blit(self.image, self.rect)
-        atk = self.get_attack_rect()
-        if atk is not None:
-            pg.draw.rect(screen, (255, 220, 0), atk, 3)
-        bar = self.get_barrier_rect()
-        if bar is not None:
-            color = (0, 200, 255) if self.barrier_type == "up" else (0, 255, 100)
-            pg.draw.rect(screen, color, bar, 3)  # 防御判定（上段:水色、中段:緑色)
 
 
 def apply_hit(
