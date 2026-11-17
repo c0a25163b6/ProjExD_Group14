@@ -389,7 +389,7 @@ class Fighter(pg.sprite.Sprite):
             self.anim_kick = self.anim_punch
 
         upper_path = os.path.join(base_dir, "apper.png")
-        if  os.path.exists(upper_path):
+        if os.path.exists(upper_path):
             self.anim_upper = load_fighter_image(upper_path, color)
         else:
             self.anim_upper = self.anim_punch
