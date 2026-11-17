@@ -109,7 +109,7 @@ COMBO_RESET_FRAMES = 90
 MAX_SUPER_GAGE = 100  # 最大ゲージ
 SUPER_GAGE_UP = 1  # 通常攻撃が当たったときの増加量
 SUPER_GAGE_REQUIRE = 15  # 必殺技発動に必要なゲージ量
-SUPER_GAGE_ATTACK_DAMAGE = 20  # 必殺技のダメージ
+SUPER_GAGE_ATTACK_DAMAGE = 100  # 必殺技のダメージ
 SUPER_GAGE_ATTACK_FRAMES = 100  # 必殺技が出ている時間（フレーム）
 SUPER_SPEED = 30  # 必殺技の移動速度(ピクセル数/フレーム)
 DAMAGE_GAUGE_UP = 5  # ダメージを受けたときのゲージ増加量
@@ -324,40 +324,6 @@ class SuperAttack(pg.sprite.Sprite):
             self.kill()
 
 
-class SuperAttack(pg.sprite.Sprite):
-    """
-    必殺技に関するクラス
-    """
-    def __init__(self, fighter: "Fighter") -> None:
-        """
-        必殺技を生成する
-        引数 fighter:必殺技を出すキャラ
-        """
-        super().__init__()
-
-        self.image = pg.Surface((60, 30), pg.SRCALPHA)  # 幅60、高さ30の画像を作る。
-        self.image.fill((255, 0, 0, 128))  # 半透明の赤色で塗りつぶす
-
-        self.rect = self.image.get_rect()  # 画像と同じ大きさの当たり判定を作る。
-        self.rect.centery = fighter.rect.centery  # キャラクターの中心の高さに合わせる。
-
-        # キャラクターの向きに合わせて出現位置を決める。
-        if fighter.facing == 1:  # 右を向いている時
-            self.rect.left = fighter.rect.right  # キャラクターの右端に合わせる。
-        else:
-            self.rect.right = fighter.rect.left  # 左を向いているときはキャラクターの左端に合わせる。
-
-        self.speed = SUPER_SPEED * fighter.facing  # キャラクターの向きに合わせて移動速度を決める。
-        self.damage = SUPER_GAGE_ATTACK_DAMAGE  # 必殺技のダメージ量を設定する。
-        self.owner = fighter  # 必殺技を出したキャラクターを記録する。(必殺技が誰のものか判定するため)
-
-    def update(self) -> None:
-        """必殺技を移動させ、画面外に出たら削除する。"""
-        self.rect.x += self.speed  # 必殺技を移動させる
-        if self.rect.right < 0 or self.rect.left > WIDTH:  # 画面外に出たら消す
-            self.kill()  # 必殺技を消す
-
-
 class Fighter(pg.sprite.Sprite):
     """格闘キャラクターの挙動やアニメーションを管理するクラス"""
 
@@ -381,6 +347,24 @@ class Fighter(pg.sprite.Sprite):
 
         punch_path = os.path.join(base_dir, "panch.png")
         self.anim_punch = load_fighter_image(punch_path, color)
+
+        kick_path = os.path.join(base_dir, "kick.png")
+        if os.path.exists(kick_path):
+            self.anim_kick = load_fighter_image(kick_path, color)
+        else:
+            self.anim_kick = self.anim_punch
+
+        upper_path = os.path.join(base_dir, "apper.png")
+        if os.path.exists(upper_path):
+            self.anim_upper = load_fighter_image(upper_path, color)
+        else:
+            self.anim_upper = self.anim_punch
+
+        air_path = os.path.join(base_dir, "air.png")
+        if os.path.exists(air_path):
+            self.anim_air = load_fighter_image(air_path, color)
+        else:
+            self.anim_air = self.anim_punch
 
         jump_path = os.path.join(base_dir, "jamp.png")
         if not os.path.exists(jump_path):
@@ -478,7 +462,15 @@ class Fighter(pg.sprite.Sprite):
         self.current_damage = damage
         self.has_hit = False
         self.can_cancel = False
-        self.current_anim = self.anim_punch
+
+        if atk_type == "kick":
+            self.current_anim = self.anim_kick
+        elif atk_type == "upper":
+            self.current_anim = self.anim_upper
+        elif atk_type == "air":
+            self.current_anim = self.anim_air
+        else:
+            self.current_anim = self.anim_punch
         self.update_image_facing()
 
     def handle_input(self, key_lst: pg.key.ScancodeWrapper) -> None:
