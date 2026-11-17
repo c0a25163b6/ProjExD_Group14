@@ -382,6 +382,24 @@ class Fighter(pg.sprite.Sprite):
         punch_path = os.path.join(base_dir, "panch.png")
         self.anim_punch = load_fighter_image(punch_path, color)
 
+        kick_path = os.path.join(base_dir, "kick.png")
+        if os.path.exists(kick_path):
+            self.anim_kick = load_fighter_image(kick_path, color)
+        else:
+            self.anim_kick = self.anim_punch
+
+        upper_path = os.path.join(base_dir, "apper.png")
+        if  os.path.exists(upper_path):
+            self.anim_upper = load_fighter_image(upper_path, color)
+        else:
+            self.anim_upper = self.anim_punch
+
+        air_path = os.path.join(base_dir, "air.png")
+        if os.path.exists(air_path):
+            self.anim_air = load_fighter_image(air_path, color)
+        else:
+            self.anim_air = self.anim_punch
+
         jump_path = os.path.join(base_dir, "jamp.png")
         if not os.path.exists(jump_path):
             jump_path = os.path.join(base_dir, "jump.png")
@@ -478,7 +496,15 @@ class Fighter(pg.sprite.Sprite):
         self.current_damage = damage
         self.has_hit = False
         self.can_cancel = False
-        self.current_anim = self.anim_punch
+
+        if atk_type == "kick":
+            self.current_anim = self.anim_kick
+        elif atk_type == "upper":
+            self.current_anim = self.anim_upper
+        elif atk_type == "air":
+            self.current_anim = self.anim_air
+        else:
+            self.current_anim = self.anim_punch
         self.update_image_facing()
 
     def handle_input(self, key_lst: pg.key.ScancodeWrapper) -> None:
