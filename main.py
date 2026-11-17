@@ -436,6 +436,7 @@ class Fighter(pg.sprite.Sprite):
         self.barrier_timer = 0  # 防御判定が残っているフレーム数
         self.barrier_cooldown = 0  # 次の防御までの待ちフレーム数
         self.barrier_type = ""  # "up"または"md"
+        self.se = None
 
         self.update_image_facing()
 
@@ -472,6 +473,8 @@ class Fighter(pg.sprite.Sprite):
         else:
             self.current_anim = self.anim_punch
         self.update_image_facing()
+        if self.se is not None:
+            self.se.play(atk_type)
 
     def handle_input(self, key_lst: pg.key.ScancodeWrapper) -> None:
         """
@@ -761,6 +764,8 @@ def check_hit(attacker: Fighter, defender: Fighter) -> int:
     bar = defender.get_barrier_rect()
     if bar is not None and atk.colliderect(bar):
         defender.block_attack(attacker.facing)
+        if defender.se is not None:
+            defender.se.play("guard")
         attacker.has_hit = True
         return 0
     if atk.colliderect(defender.rect):
@@ -1375,7 +1380,8 @@ def main() -> None:
         "super": "super.mp3",
         "guard": "guard.mp3",
     })
-
+    p1.se = se
+    p2.se = se
     tmr = 0
     result = ""
     hit_stop_frames = 0
@@ -1400,6 +1406,8 @@ def main() -> None:
                 bgm.play()  # BGMを再開する
                 hit_stop_frames = 0
                 KO_delay = 0
+                p1.se = se
+                p2.se = se
                 continue  # Rはガードキーでもあるので、この回はSEを鳴らさない
 
         if not result:
@@ -1419,6 +1427,7 @@ def main() -> None:
                             and p1.super_gauge >= SUPER_GAGE_REQUIRE
                             and p1.special_pose_timer == 0):
                         super_attacks.add(SuperAttack(p1))
+                        se.play("super")
                         p1.super_gauge = 0
                         p1.special_pose_timer = 30
 
@@ -1427,13 +1436,13 @@ def main() -> None:
                             and p2.special_pose_timer == 0
                             and not isinstance(p2, CPUFighter)):
                         super_attacks.add(SuperAttack(p2))
+                        se.play("super")
                         p2.super_gauge = 0
                         p2.special_pose_timer = 30
 
                 p1.update()
                 p2.update()
                 super_attacks.update()
-
                 if not p1.is_defeated and not p2.is_defeated:
                     push_apart(p1, p2)
                     p1.face_to(p2)
@@ -1453,6 +1462,7 @@ def main() -> None:
                     if super_attack.rect.colliderect(defender.rect):
                         defender.take_damage(super_attack.damage, super_attack.owner.facing)
                         super_attack.kill()
+
                         hit_stop_frames = 10
 
                 if (p1.hp <= 0 or p2.hp <= 0) and not p1.is_defeated and not p2.is_defeated:
